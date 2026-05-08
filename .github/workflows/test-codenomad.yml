@@ -1,0 +1,124 @@
+name: Test CodeNomad
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  test-launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+
+      - name: Install @dyyz1993/codenomad
+        run: npm install -g @dyyz1993/codenomad@0.15.0
+
+      - name: Launch codenomad service
+        run: |
+          npx @dyyz1993/codenomad@0.15.0 \
+            --launch \
+            --password 123456 \
+            --host 0.0.0.0 \
+            --port 9899 \
+            --unrestricted-root \
+            --http true \
+            > /tmp/codenomad.log 2>&1 &
+          echo "PID=$!" >> "$GITHUB_ENV"
+
+      - name: Wait for service startup
+        run: sleep 15
+
+      - name: Test HTTP root endpoint
+        id: test-root
+        run: |
+          if ! curl -sf --max-time 10 http://127.0.0.1:9899/ -o /dev/null; then
+            echo "root_endpoint=failed" >> "$GITHUB_OUTPUT"
+            echo "::error::Root endpoint http://127.0.0.1:9899/ unreachable"
+            exit 1
+          fi
+          echo "root_endpoint=passed" >> "$GITHUB_OUTPUT"
+
+      - name: Test login page
+        id: test-login
+        run: |
+          if ! curl -sf --max-time 10 http://127.0.0.1:9899/login -o /dev/null; then
+            echo "login_page=failed" >> "$GITHUB_OUTPUT"
+            echo "::error::Login page http://127.0.0.1:9899/login unreachable"
+            exit 1
+          fi
+          echo "login_page=passed" >> "$GITHUB_OUTPUT"
+
+      - name: Collect logs
+        if: always()
+        run: |
+          echo "=== CodeNomad Service Log ==="
+          cat /tmp/codenomad.log || true
+          echo ""
+          echo "=== Process Status ==="
+          ps aux | grep codenomad || true
+
+      - name: Create issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const date = new Date().toISOString().split('T')[0];
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `CI Test Failed: CodeNomad launch test (${date})`,
+              body: [
+                '## Test Launch Failure',
+                '',
+                `**Date:** ${date}`,
+                `**Run:** ${runUrl}`,
+                `**Branch:** ${context.ref}`,
+                `**Commit:** ${context.sha}`,
+                '',
+                'The automated CodeNomad launch test failed. Please investigate.',
+                '',
+                '### Steps to reproduce',
+                '1. Install `@dyyz1993/codenomad@0.15.0`',
+                '2. Launch with `--launch --password 123456 --host 0.0.0.0 --port 9899`',
+                '3. Check HTTP endpoints',
+              ].join('\n'),
+              labels: ['ci-failure', 'bug'],
+            });
+
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build server package
+        run: npm run build --workspace @dyyz1993/codenomad
+
+      - name: Typecheck
+        run: npm run typecheck
