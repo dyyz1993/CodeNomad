@@ -23,6 +23,9 @@ import {
 } from "./opencode-auth"
 
 const STARTUP_STABILITY_DELAY_MS = 1500
+const IDLE_TIMEOUT_MS = 10 * 60 * 1000
+const IDLE_CHECK_INTERVAL_MS = 60 * 1000
+const MAX_ACTIVE_WORKSPACES = 3
 
 interface WorkspaceManagerOptions {
   rootDir: string
@@ -46,6 +49,9 @@ export class WorkspaceManager {
   private readonly MAX_CONCURRENT_STARTUPS = 3
   private activeStartups = 0
   private startupQueue: Array<() => void> = []
+  private readonly lastActivityTime = new Map<string, number>()
+  private readonly workspaceBusy = new Map<string, boolean>()
+  private idleCheckTimer?: ReturnType<typeof setInterval>
 
   private async acquireStartupSlot(): Promise<void> {
     if (this.activeStartups < this.MAX_CONCURRENT_STARTUPS) {
@@ -69,6 +75,7 @@ export class WorkspaceManager {
   constructor(private readonly options: WorkspaceManagerOptions) {
     this.runtime = new WorkspaceRuntime(this.options.eventBus, this.options.logger)
     this.opencodeConfigDir = getOpencodeConfigDir()
+    this.startIdleCheck()
   }
 
   list(): WorkspaceDescriptor[] {
@@ -195,6 +202,7 @@ export class WorkspaceManager {
       descriptor.status = "ready"
       descriptor.updatedAt = new Date().toISOString()
       this.options.eventBus.publish({ type: "workspace.started", workspace: descriptor })
+      this.recordActivity(id)
       this.options.logger.info({ workspaceId: id, port }, "Workspace ready")
       return descriptor
     } catch (error) {
@@ -223,6 +231,8 @@ export class WorkspaceManager {
 
     this.workspaces.delete(id)
     this.opencodeAuth.delete(id)
+    this.lastActivityTime.delete(id)
+    this.workspaceBusy.delete(id)
     clearWorkspaceSearchCache(workspace.path)
     if (!wasRunning) {
       this.options.eventBus.publish({ type: "workspace.stopped", workspaceId: id })
@@ -232,6 +242,13 @@ export class WorkspaceManager {
 
   async shutdown() {
     this.options.logger.info("Shutting down all workspaces")
+
+    if (this.idleCheckTimer) {
+      clearInterval(this.idleCheckTimer)
+      this.idleCheckTimer = undefined
+    }
+    this.lastActivityTime.clear()
+    this.workspaceBusy.clear()
 
     const stopTasks: Array<Promise<void>> = []
 
@@ -532,6 +549,164 @@ export class WorkspaceManager {
       workspace.status = "error"
       workspace.error = `Process exited with code ${info.code}`
       this.options.eventBus.publish({ type: "workspace.error", workspace })
+    }
+  }
+
+  recordActivity(workspaceId: string): void {
+    this.lastActivityTime.set(workspaceId, Date.now())
+  }
+
+  markBusy(workspaceId: string): void {
+    this.workspaceBusy.set(workspaceId, true)
+    this.recordActivity(workspaceId)
+  }
+
+  markIdle(workspaceId: string): void {
+    this.workspaceBusy.set(workspaceId, false)
+    this.recordActivity(workspaceId)
+  }
+
+  private startIdleCheck(): void {
+    this.idleCheckTimer = setInterval(() => {
+      this.checkIdleWorkspaces().catch((err) => {
+        this.options.logger.error({ err }, "Idle check failed")
+      })
+    }, IDLE_CHECK_INTERVAL_MS)
+  }
+
+  private async checkIdleWorkspaces(): Promise<void> {
+    const now = Date.now()
+    for (const [id, lastTime] of this.lastActivityTime) {
+      const workspace = this.workspaces.get(id)
+      if (!workspace || workspace.status !== "ready") continue
+
+      if (this.workspaceBusy.get(id) === true) continue
+
+      if (now - lastTime > IDLE_TIMEOUT_MS) {
+        this.options.logger.info(
+          { workspaceId: id, idleMinutes: Math.round((now - lastTime) / 60000) },
+          "Suspending idle workspace",
+        )
+        await this.suspendWorkspace(id)
+      }
+    }
+  }
+
+  async suspendWorkspace(id: string): Promise<void> {
+    const workspace = this.workspaces.get(id)
+    if (!workspace || workspace.status !== "ready") return
+
+    await this.runtime.stop(id)
+    workspace.status = "suspended"
+    workspace.pid = undefined
+    workspace.port = undefined
+    workspace.updatedAt = new Date().toISOString()
+    this.options.eventBus.publish({ type: "workspace.suspended", workspace: { ...workspace } })
+    this.lastActivityTime.delete(id)
+    this.workspaceBusy.delete(id)
+  }
+
+  async resumeWorkspace(id: string): Promise<WorkspaceDescriptor> {
+    const workspace = this.workspaces.get(id)
+    if (!workspace || workspace.status !== "suspended") {
+      throw new Error("Workspace not found or not suspended")
+    }
+
+    const activeCount = Array.from(this.workspaces.values()).filter(
+      (w) => w.status === "ready" || w.status === "starting",
+    ).length
+    if (activeCount >= MAX_ACTIVE_WORKSPACES) {
+      await this.evictLeastRecentlyUsed(id)
+    }
+
+    await this.acquireStartupSlot()
+    try {
+      workspace.status = "starting"
+      workspace.updatedAt = new Date().toISOString()
+
+      const binary = await this.options.binaryResolver.resolveDefault()
+      const resolvedBinaryPath = await this.resolveBinaryPath(binary.path)
+
+      const serverConfig = await this.options.settings.getOwner("config", "server")
+      const envVars = (serverConfig as any)?.environmentVariables
+      const userEnvironment = envVars && typeof envVars === "object" && !Array.isArray(envVars) ? (envVars as any) : {}
+      const serverBaseUrl = this.options.getServerBaseUrl()
+      const normalizedServerBaseUrl = serverBaseUrl.replace(/\/+$/, "")
+
+      const { username: opencodeUsername, password: opencodePassword } = resolveOpencodeServerAuth({
+        userEnvironment,
+        processEnv: process.env,
+      })
+      const authorization = buildOpencodeBasicAuthHeader({ username: opencodeUsername, password: opencodePassword })
+      if (!authorization) {
+        throw new Error("Failed to build OpenCode auth header")
+      }
+      this.opencodeAuth.set(id, { username: opencodeUsername, password: opencodePassword, authorization })
+
+      const environment = {
+        ...userEnvironment,
+        OPENCODE_CONFIG_DIR: this.opencodeConfigDir,
+        CODENOMAD_INSTANCE_ID: id,
+        CODENOMAD_BASE_URL: serverBaseUrl,
+        ...(this.options.nodeExtraCaCertsPath ? { NODE_EXTRA_CA_CERTS: this.options.nodeExtraCaCertsPath } : {}),
+        [OPENCODE_SERVER_BASE_URL_ENV]: `${normalizedServerBaseUrl}${workspace.proxyPath}`,
+        [OPENCODE_SERVER_USERNAME_ENV]: opencodeUsername,
+        [OPENCODE_SERVER_PASSWORD_ENV]: opencodePassword,
+      }
+
+      const logLevel = (serverConfig as any)?.logLevel
+
+      const { pid, port, exitPromise, getLastOutput } = await this.runtime.launch({
+        workspaceId: id,
+        folder: workspace.path,
+        binaryPath: resolvedBinaryPath,
+        environment,
+        logLevel,
+        onExit: (info) => this.handleProcessExit(info.workspaceId, info),
+      })
+
+      const runtimeVersion = await this.waitForWorkspaceReadiness({ workspaceId: id, port, exitPromise, getLastOutput })
+      if (runtimeVersion) {
+        workspace.binaryVersion = runtimeVersion
+      }
+
+      workspace.pid = pid
+      workspace.port = port
+      workspace.status = "ready"
+      workspace.updatedAt = new Date().toISOString()
+      this.recordActivity(id)
+      this.options.eventBus.publish({ type: "workspace.resumed", workspace: { ...workspace } })
+      this.options.logger.info({ workspaceId: id, port }, "Workspace resumed")
+      return workspace
+    } catch (error) {
+      workspace.status = "error"
+      workspace.error = error instanceof Error ? error.message : String(error)
+      workspace.updatedAt = new Date().toISOString()
+      this.options.eventBus.publish({ type: "workspace.error", workspace })
+      this.options.logger.error({ workspaceId: id, err: error }, "Workspace failed to resume")
+      throw error
+    } finally {
+      this.releaseStartupSlot()
+    }
+  }
+
+  private async evictLeastRecentlyUsed(excludeId: string): Promise<void> {
+    let lruId: string | undefined
+    let lruTime = Infinity
+
+    for (const [id, lastTime] of this.lastActivityTime) {
+      if (id === excludeId) continue
+      const workspace = this.workspaces.get(id)
+      if (!workspace || workspace.status !== "ready") continue
+      if (lastTime < lruTime) {
+        lruTime = lastTime
+        lruId = id
+      }
+    }
+
+    if (lruId) {
+      this.options.logger.info({ workspaceId: lruId }, "Evicting least recently used workspace")
+      await this.suspendWorkspace(lruId)
     }
   }
 }

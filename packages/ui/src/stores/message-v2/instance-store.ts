@@ -229,6 +229,7 @@ export interface InstanceMessageStore {
   getLatestTodoSnapshot: (sessionId: string) => LatestTodoSnapshot | undefined
   clearSession: (sessionId: string) => void
   clearInstance: () => void
+  clearMessages: () => void
 }
 
 export function createInstanceMessageStore(instanceId: string, hooks?: MessageStoreHooks): InstanceMessageStore {
@@ -1274,8 +1275,36 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
      messageInfoCache.clear()
       setState(reconcile(createInitialState(instanceId)))
     }
+
+   function clearMessages() {
+     const allMessageIds = Object.keys(state.messages)
+     clearRecordDisplayCacheForMessages(instanceId, allMessageIds)
+
+     batch(() => {
+       setState("messages", {})
+       setState("messageInfoVersion", {})
+       setState("pendingParts", {})
+       setState("permissions", "byMessage", {})
+       setState("questions", "byMessage", {})
+       setState("usage", {})
+       setState("scrollState", {})
+       setState("latestTodos", {})
+
+       setState("sessions", (prev) => {
+         const next: Record<string, SessionRecord> = {}
+         for (const [id, session] of Object.entries(prev)) {
+           next[id] = { ...session, messageIds: [] }
+         }
+         return next
+       })
+
+       setState("lastAssistantMessageIds", {})
+     })
+
+     messageInfoCache.clear()
+   }
  
-    return {
+     return {
 
      instanceId,
      state,
@@ -1313,5 +1342,6 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
       getLatestTodoSnapshot: (sessionId: string) => state.latestTodos[sessionId],
       clearSession,
       clearInstance,
+      clearMessages,
      }
    }

@@ -28,7 +28,9 @@ export class InstanceEventBridge {
   constructor(private readonly options: InstanceEventBridgeOptions) {
     const bus = this.options.eventBus
     bus.on("workspace.started", (event) => this.startStream(event.workspace.id))
+    bus.on("workspace.resumed", (event) => this.startStream(event.workspace.id))
     bus.on("workspace.stopped", (event) => this.stopStream(event.workspaceId, "workspace stopped"))
+    bus.on("workspace.suspended", (event) => this.stopStream(event.workspace.id, "workspace suspended"))
     bus.on("workspace.error", (event) => this.stopStream(event.workspace.id, "workspace error"))
   }
 
@@ -146,6 +148,8 @@ export class InstanceEventBridge {
   }
 
   private processChunk(chunk: string, workspaceId: string) {
+    this.options.workspaceManager.recordActivity(workspaceId)
+
     const lines = chunk.split(/\r?\n/)
     const dataLines: string[] = []
 
@@ -193,6 +197,8 @@ export class InstanceEventBridge {
         return
       }
 
+      this.trackSessionState(workspaceId, event as any)
+
       this.options.logger.debug({ workspaceId, eventType: (event as any).type }, "Instance SSE event received")
       if (this.options.logger.isLevelEnabled("trace")) {
         this.options.logger.trace({ workspaceId, event }, "Instance SSE event payload")
@@ -210,6 +216,32 @@ export class InstanceEventBridge {
       this.options.eventBus.publish({ type: "instance.event", instanceId: workspaceId, event })
     } catch (error) {
       this.options.logger.warn({ workspaceId, chunk: payload, err: error }, "Failed to parse instance SSE payload")
+    }
+  }
+
+  private trackSessionState(workspaceId: string, event: { type: string; properties?: Record<string, unknown> }): void {
+    const BUSY_EVENTS = new Set([
+      "message.updated",
+      "message.part.updated",
+      "message.part.delta",
+      "session.compacted",
+      "permission.asked",
+      "question.asked",
+    ])
+
+    const IDLE_EVENTS = new Set([
+      "session.idle",
+    ])
+
+    const eventType = event.type
+
+    if (IDLE_EVENTS.has(eventType)) {
+      this.options.workspaceManager.markIdle(workspaceId)
+      return
+    }
+
+    if (BUSY_EVENTS.has(eventType)) {
+      this.options.workspaceManager.markBusy(workspaceId)
     }
   }
 

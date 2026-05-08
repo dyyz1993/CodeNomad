@@ -12,7 +12,7 @@ import type {
  * These types are consumed by both the CLI implementation and any UI clients.
  */
 
-export type WorkspaceStatus = "starting" | "ready" | "stopped" | "error"
+export type WorkspaceStatus = "starting" | "ready" | "stopped" | "error" | "suspended"
 
 export interface WorkspaceDescriptor {
   id: string
@@ -361,6 +361,8 @@ export type WorkspaceEventType =
   | "workspace.started"
   | "workspace.error"
   | "workspace.stopped"
+  | "workspace.suspended"
+  | "workspace.resumed"
   | "workspace.log"
   | "sidecar.updated"
   | "sidecar.removed"
@@ -375,6 +377,8 @@ export type WorkspaceEventPayload =
   | { type: "workspace.started"; workspace: WorkspaceDescriptor }
   | { type: "workspace.error"; workspace: WorkspaceDescriptor }
   | { type: "workspace.stopped"; workspaceId: string }
+  | { type: "workspace.suspended"; workspace: WorkspaceDescriptor }
+  | { type: "workspace.resumed"; workspace: WorkspaceDescriptor }
   | { type: "workspace.log"; entry: WorkspaceLogEntry }
   | { type: "sidecar.updated"; sidecar: SideCar }
   | { type: "sidecar.removed"; sidecarId: string }

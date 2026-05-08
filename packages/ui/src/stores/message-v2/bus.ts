@@ -1,6 +1,7 @@
 import { createInstanceMessageStore } from "./instance-store"
 import type { InstanceMessageStore } from "./instance-store"
 import { clearCacheForInstance } from "../../lib/global-cache"
+import { clearRecordDisplayCacheForInstance } from "./record-display-cache"
 import { getLogger } from "../../lib/logger"
 
 const log = getLogger("session")
@@ -73,6 +74,18 @@ class MessageStoreBus {
       this.notifyInstanceDestroyed(instanceId)
       this.stores.delete(instanceId)
     }
+  }
+
+  clearInstanceData(instanceId: string): void {
+    const store = this.stores.get(instanceId)
+    if (store) {
+      store.clearMessages()
+    }
+    clearRecordDisplayCacheForInstance(instanceId)
+  }
+
+  getStoreInstanceIds(): string[] {
+    return Array.from(this.stores.keys())
   }
 
   private notifyInstanceDestroyed(instanceId: string) {

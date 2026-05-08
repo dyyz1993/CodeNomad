@@ -75,7 +75,28 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: RouteDeps) {
       reply.code(404)
       return { error: "Workspace not found" }
     }
+    if (workspace.status === "suspended") {
+      try {
+        return await deps.workspaceManager.resumeWorkspace(request.params.id)
+      } catch (error) {
+        request.log.error({ err: error }, "Failed to resume workspace")
+        const message = error instanceof Error ? error.message : "Failed to resume workspace"
+        reply.code(500).type("text/plain").send(message)
+        return
+      }
+    }
     return workspace
+  })
+
+  app.post<{ Params: { id: string } }>("/api/workspaces/:id/resume", async (request, reply) => {
+    try {
+      const workspace = await deps.workspaceManager.resumeWorkspace(request.params.id)
+      return workspace
+    } catch (error) {
+      request.log.error({ err: error }, "Failed to resume workspace")
+      const message = error instanceof Error ? error.message : "Failed to resume workspace"
+      reply.code(400).type("text/plain").send(message)
+    }
   })
 
   app.delete<{ Params: { id: string } }>("/api/workspaces/:id", async (request, reply) => {

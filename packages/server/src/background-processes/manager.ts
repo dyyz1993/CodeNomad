@@ -59,6 +59,7 @@ export class BackgroundProcessManager {
 
   constructor(private readonly deps: ManagerDeps) {
     this.deps.eventBus.on("workspace.stopped", (event) => this.cleanupWorkspace(event.workspaceId))
+    this.deps.eventBus.on("workspace.suspended", (event) => this.cleanupWorkspace(event.workspace.id))
     this.deps.eventBus.on("workspace.error", (event) => this.cleanupWorkspace(event.workspace.id))
   }
 

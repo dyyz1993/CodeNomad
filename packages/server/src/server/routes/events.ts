@@ -46,6 +46,8 @@ export function registerEventRoutes(app: FastifyInstance, deps: RouteDeps) {
         case "workspace.created":
         case "workspace.started":
         case "workspace.error":
+        case "workspace.suspended":
+        case "workspace.resumed":
           return event.workspace?.id
         case "workspace.stopped":
           return event.workspaceId

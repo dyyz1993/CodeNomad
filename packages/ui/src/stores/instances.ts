@@ -42,7 +42,32 @@ const log = getLogger("api")
 
 const [instances, setInstances] = createSignal<Map<string, Instance>>(new Map())
 
-const [activeInstanceId, setActiveInstanceId] = createSignal<string | null>(null)
+const [activeInstanceId, _setActiveInstanceId] = createSignal<string | null>(null)
+
+const MAX_CACHED_INSTANCES = 3
+
+function setActiveInstanceId(id: string | null) {
+  _setActiveInstanceId(id)
+  queueMicrotask(() => {
+    evictInactiveInstanceStores(id)
+  })
+}
+
+function evictInactiveInstanceStores(activeId: string | null | undefined) {
+  if (!activeId) return
+
+  const allInstanceIds = messageStoreBus.getStoreInstanceIds()
+  if (allInstanceIds.length <= MAX_CACHED_INSTANCES) return
+
+  const inactiveIds = allInstanceIds.filter((id) => id !== activeId)
+  const toEvict = inactiveIds.length - (MAX_CACHED_INSTANCES - 1)
+  if (toEvict <= 0) return
+
+  for (let i = 0; i < toEvict; i++) {
+    messageStoreBus.clearInstanceData(inactiveIds[i])
+    log.info("Evicted message data for inactive instance", { instanceId: inactiveIds[i] })
+  }
+}
 const [instanceLogs, setInstanceLogs] = createSignal<Map<string, LogEntry[]>>(new Map())
 const [logStreamingState, setLogStreamingState] = createSignal<Map<string, boolean>>(new Map())
 
