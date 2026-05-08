@@ -109,7 +109,7 @@ jobs:
                   '',
                   '### Steps to reproduce',
                   '1. Install `@dyyz1993/codenomad@0.15.0`',
-                  '2. Launch with `--launch --password 123456 --host 0.0.0.0 --port 9899`',
+                  '2. Launch with `--launch --password 123456 --host 0.0.0.0 --http true --http-port 9899`',
                   '3. Check HTTP endpoints',
                 ].join('\n'),
                 labels: ['ci-failure', 'bug'],
@@ -131,7 +131,7 @@ jobs:
           node-version: 20.x
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build server package
         run: npm run build --workspace @dyyz1993/codenomad
