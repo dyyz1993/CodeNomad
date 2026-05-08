@@ -47,9 +47,9 @@ jobs:
             --launch \
             --password 123456 \
             --host 0.0.0.0 \
-            --port 9899 \
-            --unrestricted-root \
             --http true \
+            --http-port 9899 \
+            --unrestricted-root \
             > /tmp/codenomad.log 2>&1 &
           echo "PID=$!" >> "$GITHUB_ENV"
 
@@ -131,7 +131,7 @@ jobs:
           node-version: 20.x
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Build server package
         run: npm run build --workspace @dyyz1993/codenomad
