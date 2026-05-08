@@ -225,7 +225,7 @@ export class BackgroundProcessManager {
     options: { method?: "full" | "tail" | "head" | "grep"; pattern?: string; lines?: number; maxBytes?: number },
   ) {
     const outputPath = this.getOutputPath(workspaceId, processId)
-    if (!existsSync(outputPath)) {
+    if (!outputPath || !existsSync(outputPath)) {
       return { id: processId, content: "", truncated: false, sizeBytes: 0 }
     }
 
@@ -265,7 +265,7 @@ export class BackgroundProcessManager {
 
   async streamOutput(workspaceId: string, processId: string, reply: any) {
     const outputPath = this.getOutputPath(workspaceId, processId)
-    if (!existsSync(outputPath)) {
+    if (!outputPath || !existsSync(outputPath)) {
       reply.code(404).send({ error: "Output not found" })
       return
     }
@@ -455,27 +455,30 @@ export class BackgroundProcessManager {
       .join("\n")
   }
 
-  private async ensureProcessDir(workspaceId: string, processId: string) {
+  private async ensureProcessDir(workspaceId: string, processId: string): Promise<string> {
     const root = await this.ensureWorkspaceDir(workspaceId)
+    if (!root) {
+      throw new Error("Workspace not found")
+    }
     const processDir = path.join(root, processId)
     await fs.mkdir(processDir, { recursive: true })
     return processDir
   }
 
-  private async ensureWorkspaceDir(workspaceId: string) {
+  private async ensureWorkspaceDir(workspaceId: string): Promise<string | null> {
     const workspace = this.deps.workspaceManager.get(workspaceId)
     if (!workspace) {
-      throw new Error("Workspace not found")
+      return null
     }
     const root = path.join(workspace.path, ROOT_DIR, workspaceId)
     await fs.mkdir(root, { recursive: true })
     return root
   }
 
-  private getOutputPath(workspaceId: string, processId: string) {
+  private getOutputPath(workspaceId: string, processId: string): string | null {
     const workspace = this.deps.workspaceManager.get(workspaceId)
     if (!workspace) {
-      throw new Error("Workspace not found")
+      return null
     }
     return path.join(workspace.path, ROOT_DIR, workspaceId, processId, OUTPUT_FILE)
   }
@@ -487,6 +490,7 @@ export class BackgroundProcessManager {
 
   private async readIndex(workspaceId: string): Promise<PersistedBackgroundProcess[]> {
     const indexPath = await this.getIndexPath(workspaceId)
+    if (!indexPath) return []
     if (!existsSync(indexPath)) return []
 
     try {
@@ -517,14 +521,15 @@ export class BackgroundProcessManager {
 
   private async writeIndex(workspaceId: string, records: PersistedBackgroundProcess[]) {
     const indexPath = await this.getIndexPath(workspaceId)
+    if (!indexPath) return
     await fs.mkdir(path.dirname(indexPath), { recursive: true })
     await fs.writeFile(indexPath, JSON.stringify(records, null, 2))
   }
 
-  private async getIndexPath(workspaceId: string) {
+  private async getIndexPath(workspaceId: string): Promise<string | null> {
     const workspace = this.deps.workspaceManager.get(workspaceId)
     if (!workspace) {
-      throw new Error("Workspace not found")
+      return null
     }
     return path.join(workspace.path, ROOT_DIR, workspaceId, INDEX_FILE)
   }
@@ -549,7 +554,7 @@ export class BackgroundProcessManager {
 
   private async getOutputSize(workspaceId: string, processId: string): Promise<number> {
     const outputPath = this.getOutputPath(workspaceId, processId)
-    if (!existsSync(outputPath)) {
+    if (!outputPath || !existsSync(outputPath)) {
       return 0
     }
     try {
@@ -587,6 +592,15 @@ export class BackgroundProcessManager {
   }
 
   private async finalizeRecord(workspaceId: string, record: PersistedBackgroundProcess, completion: ProcessCompletion) {
+    if (!this.deps.workspaceManager.get(workspaceId)) {
+      this.deps.logger.debug(
+        { workspaceId, processId: record.id },
+        "Skipping finalizeRecord: workspace already removed",
+      )
+      this.running.delete(record.id)
+      return
+    }
+
     if (this.shouldSendCompletionPrompt(record, completion)) {
       try {
         await this.sendCompletionPrompt(workspaceId, record)
