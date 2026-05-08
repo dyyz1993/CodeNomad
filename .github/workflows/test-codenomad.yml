@@ -134,7 +134,10 @@ jobs:
         run: npm install
 
       - name: Build server package
-        run: npm run build --workspace @dyyz1993/codenomad
+        run: npm run build
+        working-directory: packages/server
 
       - name: Typecheck
-        run: npm run typecheck
+        run: |
+          npm run typecheck
+        working-directory: packages/ui
