@@ -1,5 +1,5 @@
 {
-  "name": "@neuralnomads/codenomad-electron-app",
+  "name": "@dyyz1993/codenomad-electron-app",
   "version": "0.15.0",
   "description": "CodeNomad - AI coding assistant",
   "license": "MIT",
@@ -40,7 +40,7 @@
     "package:linux": "node scripts/build.js linux"
   },
   "dependencies": {
-    "@neuralnomads/codenomad": "file:../server",
+    "@dyyz1993/codenomad": "file:../server",
     "@codenomad/ui": "file:../ui",
     "yaml": "^2.4.2"
   },

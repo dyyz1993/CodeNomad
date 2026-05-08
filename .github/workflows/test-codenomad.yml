@@ -26,8 +26,20 @@ jobs:
         with:
           node-version: 20.x
 
-      - name: Install @dyyz1993/codenomad
-        run: npm install -g @dyyz1993/codenomad@0.15.0
+      - name: Install @dyyz1993/codenomad (with retry)
+        run: |
+          for i in 1 2 3; do
+            if npm install -g @dyyz1993/codenomad@0.15.0; then
+              echo "Install succeeded on attempt $i"
+              break
+            fi
+            echo "Install failed on attempt $i, retrying in 10s..."
+            sleep 10
+            if [ "$i" -eq 3 ]; then
+              echo "::error::Failed to install @dyyz1993/codenomad@0.15.0 after 3 attempts"
+              exit 1
+            fi
+          done
 
       - name: Launch codenomad service
         run: |
@@ -78,29 +90,33 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const date = new Date().toISOString().split('T')[0];
-            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `CI Test Failed: CodeNomad launch test (${date})`,
-              body: [
-                '## Test Launch Failure',
-                '',
-                `**Date:** ${date}`,
-                `**Run:** ${runUrl}`,
-                `**Branch:** ${context.ref}`,
-                `**Commit:** ${context.sha}`,
-                '',
-                'The automated CodeNomad launch test failed. Please investigate.',
-                '',
-                '### Steps to reproduce',
-                '1. Install `@dyyz1993/codenomad@0.15.0`',
-                '2. Launch with `--launch --password 123456 --host 0.0.0.0 --port 9899`',
-                '3. Check HTTP endpoints',
-              ].join('\n'),
-              labels: ['ci-failure', 'bug'],
-            });
+            try {
+              const date = new Date().toISOString().split('T')[0];
+              const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `CI Test Failed: CodeNomad launch test (${date})`,
+                body: [
+                  '## Test Launch Failure',
+                  '',
+                  `**Date:** ${date}`,
+                  `**Run:** ${runUrl}`,
+                  `**Branch:** ${context.ref}`,
+                  `**Commit:** ${context.sha}`,
+                  '',
+                  'The automated CodeNomad launch test failed. Please investigate.',
+                  '',
+                  '### Steps to reproduce',
+                  '1. Install `@dyyz1993/codenomad@0.15.0`',
+                  '2. Launch with `--launch --password 123456 --host 0.0.0.0 --port 9899`',
+                  '3. Check HTTP endpoints',
+                ].join('\n'),
+                labels: ['ci-failure', 'bug'],
+              });
+            } catch (err) {
+              console.log('Failed to create issue (may be disabled):', err.message);
+            }
 
   build-test:
     runs-on: ubuntu-latest
