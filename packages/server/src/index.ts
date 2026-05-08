@@ -344,7 +344,7 @@ async function main() {
   })
   const instanceStore = new InstanceStore(configLocation.instancesDir)
   const speechService = new SpeechService(settings, logger.child({ component: "speech" }))
-  const sidecarManager = new SideCarManager({
+  const sidecarManager = await SideCarManager.create({
     settings,
     eventBus,
     logger: logger.child({ component: "sidecars" }),

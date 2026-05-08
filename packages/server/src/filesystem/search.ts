@@ -1,4 +1,5 @@
-import fs from "fs"
+import { readdir, stat } from "node:fs/promises"
+import { Dirent } from "node:fs"
 import path from "path"
 import fuzzysort from "fuzzysort"
 import type { FileSystemEntry } from "../api-types"
@@ -26,11 +27,11 @@ interface CandidateEntry {
   key: string
 }
 
-export function searchWorkspaceFiles(
+export async function searchWorkspaceFiles(
   rootDir: string,
   query: string,
   options: WorkspaceFileSearchOptions = {},
-): FileSystemEntry[] {
+): Promise<FileSystemEntry[]> {
   const trimmedQuery = query.trim()
   if (!trimmedQuery) {
     throw new Error("Search query is required")
@@ -49,7 +50,7 @@ export function searchWorkspaceFiles(
     }
 
     if (!entries) {
-      entries = refreshWorkspaceCandidates(normalizedRoot, () => collectCandidates(normalizedRoot))
+      entries = await refreshWorkspaceCandidates(normalizedRoot, () => collectCandidates(normalizedRoot))
     }
   } catch (error) {
     clearWorkspaceSearchCache(normalizedRoot)
@@ -80,7 +81,7 @@ export function searchWorkspaceFiles(
 }
 
 
-function collectCandidates(rootDir: string): FileSystemEntry[] {
+async function collectCandidates(rootDir: string): Promise<FileSystemEntry[]> {
   const queue: string[] = [""]
   const entries: FileSystemEntry[] = []
 
@@ -88,9 +89,9 @@ function collectCandidates(rootDir: string): FileSystemEntry[] {
     const relativeDir = queue.pop() || ""
     const absoluteDir = relativeDir ? path.join(rootDir, relativeDir) : rootDir
 
-    let dirents: fs.Dirent[]
+    let dirents: Dirent[]
     try {
-      dirents = fs.readdirSync(absoluteDir, { withFileTypes: true })
+      dirents = await readdir(absoluteDir, { withFileTypes: true })
     } catch {
       continue
     }
@@ -105,9 +106,9 @@ function collectCandidates(rootDir: string): FileSystemEntry[] {
         continue
       }
 
-      let stats: fs.Stats
+      let stats: Awaited<ReturnType<typeof stat>>
       try {
-        stats = fs.statSync(absolutePath)
+        stats = await stat(absolutePath)
       } catch {
         continue
       }

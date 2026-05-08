@@ -25,13 +25,13 @@ export function getWorkspaceCandidates(rootDir: string, now = Date.now()): FileS
   return cloneEntries(cached.candidates)
 }
 
-export function refreshWorkspaceCandidates(
+export async function refreshWorkspaceCandidates(
   rootDir: string,
-  builder: () => FileSystemEntry[],
+  builder: () => Promise<FileSystemEntry[]>,
   now = Date.now(),
-): FileSystemEntry[] {
+): Promise<FileSystemEntry[]> {
   const key = normalizeKey(rootDir)
-  const freshCandidates = builder()
+  const freshCandidates = await builder()
 
   if (!freshCandidates || freshCandidates.length === 0) {
     workspaceCandidateCache.delete(key)

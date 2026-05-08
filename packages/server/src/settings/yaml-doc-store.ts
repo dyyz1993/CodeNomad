@@ -1,4 +1,5 @@
-import fs from "fs"
+import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises"
+import { constants } from "node:fs"
 import path from "path"
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml"
 import type { Logger } from "../logger"
@@ -27,19 +28,21 @@ export class YamlDocStore {
     private readonly logger: Logger,
   ) {}
 
-  load(): SettingsDoc {
+  async load(): Promise<SettingsDoc> {
     if (this.loaded) {
       return this.cache
     }
 
     try {
-      if (!fs.existsSync(this.filePath)) {
+      try {
+        await access(this.filePath, constants.F_OK)
+      } catch {
         this.cache = {}
         this.loaded = true
         return this.cache
       }
 
-      const content = fs.readFileSync(this.filePath, "utf-8")
+      const content = await readFile(this.filePath, "utf-8")
       const parsed = parseYaml(content)
       this.cache = normalizeDoc(parsed)
       this.loaded = true
@@ -52,57 +55,57 @@ export class YamlDocStore {
     }
   }
 
-  get(): SettingsDoc {
+  async get(): Promise<SettingsDoc> {
     return this.load()
   }
 
-  replace(next: unknown): SettingsDoc {
+  async replace(next: unknown): Promise<SettingsDoc> {
     const normalized = normalizeDoc(next)
     this.cache = normalized
     this.loaded = true
-    this.persist()
+    await this.persist()
     return this.cache
   }
 
-  mergePatch(patch: unknown): SettingsDoc {
+  async mergePatch(patch: unknown): Promise<SettingsDoc> {
     if (!isPlainObject(patch)) {
       throw new Error("Patch must be a JSON object")
     }
-    const current = this.get()
+    const current = await this.get()
     const next = applyMergePatch(current, patch)
     return this.replace(next)
   }
 
-  getOwner(owner: string): SettingsDoc {
-    const doc = this.get()
+  async getOwner(owner: string): Promise<SettingsDoc> {
+    const doc = await this.get()
     const value = (doc as any)?.[owner]
     return normalizeDoc(value)
   }
 
-  replaceOwner(owner: string, value: unknown): SettingsDoc {
-    const doc = this.get()
+  async replaceOwner(owner: string, value: unknown): Promise<SettingsDoc> {
+    const doc = await this.get()
     const nextDoc: SettingsDoc = { ...doc, [owner]: normalizeDoc(value) }
-    this.replace(nextDoc)
+    await this.replace(nextDoc)
     return nextDoc[owner] as SettingsDoc
   }
 
-  mergePatchOwner(owner: string, patch: unknown): SettingsDoc {
+  async mergePatchOwner(owner: string, patch: unknown): Promise<SettingsDoc> {
     if (!isPlainObject(patch)) {
       throw new Error("Patch must be a JSON object")
     }
-    const doc = this.get()
+    const doc = await this.get()
     const currentOwner = normalizeDoc((doc as any)?.[owner])
     const nextOwner = normalizeDoc(applyMergePatch(currentOwner, patch))
     const nextDoc: SettingsDoc = { ...doc, [owner]: nextOwner }
-    this.replace(nextDoc)
+    await this.replace(nextDoc)
     return nextOwner
   }
 
-  private persist() {
+  private async persist() {
     try {
-      fs.mkdirSync(path.dirname(this.filePath), { recursive: true })
+      await mkdir(path.dirname(this.filePath), { recursive: true })
       const yaml = stringifyYaml(this.cache as any)
-      fs.writeFileSync(this.filePath, ensureTrailingNewline(yaml), "utf-8")
+      await writeFile(this.filePath, ensureTrailingNewline(yaml), "utf-8")
     } catch (error) {
       this.logger.warn({ err: error, filePath: this.filePath }, "Failed to persist YAML doc")
     }

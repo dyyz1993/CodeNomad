@@ -71,53 +71,53 @@ export class SettingsService {
     this.stateStore = new YamlDocStore(location.stateYamlPath, logger.child({ component: "settings-state" }))
   }
 
-  getDoc(kind: DocKind): SettingsDoc {
+  async getDoc(kind: DocKind): Promise<SettingsDoc> {
     if (kind !== "config") {
       return this.stateStore.get()
     }
 
-    const current = this.configStore.get()
+    const current = await this.configStore.get()
     const normalized = normalizeConfigDoc(current)
     if (!isDeepEqual(current, normalized)) {
-      this.configStore.replace(normalized)
+      await this.configStore.replace(normalized)
     }
     return normalized
   }
 
-  mergePatchDoc(kind: DocKind, patch: unknown): SettingsDoc {
+  async mergePatchDoc(kind: DocKind, patch: unknown): Promise<SettingsDoc> {
     const updated =
       kind === "config"
-        ? this.configStore.replace(normalizeConfigDoc(this.configStore.mergePatch(patch)))
-        : this.stateStore.mergePatch(patch)
-    this.publish(kind, "*")
+        ? await this.configStore.replace(normalizeConfigDoc(await this.configStore.mergePatch(patch)))
+        : await this.stateStore.mergePatch(patch)
+    await this.publish(kind, "*")
     return updated
   }
 
-  getOwner(kind: DocKind, owner: string): SettingsDoc {
+  async getOwner(kind: DocKind, owner: string): Promise<SettingsDoc> {
     if (kind !== "config") {
       return this.stateStore.getOwner(owner)
     }
 
     return owner === "server"
-      ? normalizeServerConfigOwner(this.getDoc("config").server as SettingsDoc)
-      : this.getDoc("config")[owner] as SettingsDoc
+      ? normalizeServerConfigOwner((await this.getDoc("config")).server as SettingsDoc)
+      : (await this.getDoc("config"))[owner] as SettingsDoc
   }
 
-  mergePatchOwner(kind: DocKind, owner: string, patch: unknown): SettingsDoc {
+  async mergePatchOwner(kind: DocKind, owner: string, patch: unknown): Promise<SettingsDoc> {
     const updated =
       kind === "config"
         ? owner === "server"
-          ? this.configStore.replaceOwner(owner, normalizeServerConfigOwner(this.configStore.mergePatchOwner(owner, patch)))
-          : this.configStore.mergePatchOwner(owner, patch)
-        : this.stateStore.mergePatchOwner(owner, patch)
-    this.publish(kind, owner, updated)
+          ? await this.configStore.replaceOwner(owner, normalizeServerConfigOwner(await this.configStore.mergePatchOwner(owner, patch)))
+          : await this.configStore.mergePatchOwner(owner, patch)
+        : await this.stateStore.mergePatchOwner(owner, patch)
+    await this.publish(kind, owner, updated)
     return updated
   }
 
-  private publish(kind: DocKind, owner: string, value?: SettingsDoc) {
+  private async publish(kind: DocKind, owner: string, value?: SettingsDoc) {
     if (!this.eventBus) return
     const type = kind === "config" ? "storage.configChanged" : "storage.stateChanged"
-    const nextValue = value ?? this.getOwner(kind, owner)
+    const nextValue = value ?? await this.getOwner(kind, owner)
     const payload: WorkspaceEventPayload = {
       type,
       owner,

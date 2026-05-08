@@ -65,32 +65,32 @@ export class SpeechService {
     private readonly logger: Logger,
   ) {}
 
-  getCapabilities(): SpeechCapabilitiesResponse {
-    return this.createProvider().getCapabilities()
+  async getCapabilities(): Promise<SpeechCapabilitiesResponse> {
+    return (await this.createProvider()).getCapabilities()
   }
 
   async transcribe(input: TranscribeAudioInput): Promise<SpeechTranscriptionResponse> {
-    return this.createProvider().transcribe(input)
+    return (await this.createProvider()).transcribe(input)
   }
 
   async synthesize(input: SynthesizeSpeechInput): Promise<SpeechSynthesisResponse> {
-    return this.createProvider().synthesize(input)
+    return (await this.createProvider()).synthesize(input)
   }
 
   async synthesizeStream(input: SynthesizeSpeechInput): Promise<SpeechSynthesisStreamResponse> {
-    return this.createProvider().synthesizeStream(input)
+    return (await this.createProvider()).synthesizeStream(input)
   }
 
-  private createProvider(): SpeechProvider {
-    const settings = this.resolveSettings()
+  private async createProvider(): Promise<SpeechProvider> {
+    const settings = await this.resolveSettings()
     return new OpenAICompatibleSpeechProvider({
       settings,
       logger: this.logger.child({ provider: settings.provider }),
     })
   }
 
-  private resolveSettings(): NormalizedSpeechSettings {
-    const parsed = ServerSpeechSettingsSchema.parse(this.settings.getOwner("config", "server") ?? {})
+  private async resolveSettings(): Promise<NormalizedSpeechSettings> {
+    const parsed = ServerSpeechSettingsSchema.parse(await this.settings.getOwner("config", "server") ?? {})
     const speech = parsed.speech ?? {}
 
     return {

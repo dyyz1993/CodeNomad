@@ -21,10 +21,10 @@ function validateBinaryPath(binaryPath: string): { valid: boolean; version?: str
 
 export function registerSettingsRoutes(app: FastifyInstance, deps: RouteDeps) {
   // Full-document access
-  app.get("/api/storage/config", async () => sanitizeConfigDoc(deps.settings.getDoc("config")))
+  app.get("/api/storage/config", async () => sanitizeConfigDoc(await deps.settings.getDoc("config")))
   app.patch("/api/storage/config", async (request, reply) => {
     try {
-      return sanitizeConfigDoc(deps.settings.mergePatchDoc("config", request.body ?? {}))
+      return sanitizeConfigDoc(await deps.settings.mergePatchDoc("config", request.body ?? {}))
     } catch (error) {
       reply.code(400)
       return { error: error instanceof Error ? error.message : "Invalid patch" }
@@ -32,14 +32,14 @@ export function registerSettingsRoutes(app: FastifyInstance, deps: RouteDeps) {
   })
 
   app.get<{ Params: { owner: string } }>("/api/storage/config/:owner", async (request) => {
-    return sanitizeConfigOwner(request.params.owner, deps.settings.getOwner("config", request.params.owner))
+    return sanitizeConfigOwner(request.params.owner, await deps.settings.getOwner("config", request.params.owner))
   })
 
   app.patch<{ Params: { owner: string } }>("/api/storage/config/:owner", async (request, reply) => {
     try {
       return sanitizeConfigOwner(
         request.params.owner,
-        deps.settings.mergePatchOwner("config", request.params.owner, request.body ?? {}),
+        await deps.settings.mergePatchOwner("config", request.params.owner, request.body ?? {}),
       )
     } catch (error) {
       reply.code(400)
@@ -50,7 +50,7 @@ export function registerSettingsRoutes(app: FastifyInstance, deps: RouteDeps) {
   app.get("/api/storage/state", async () => deps.settings.getDoc("state"))
   app.patch("/api/storage/state", async (request, reply) => {
     try {
-      return deps.settings.mergePatchDoc("state", request.body ?? {})
+      return await deps.settings.mergePatchDoc("state", request.body ?? {})
     } catch (error) {
       reply.code(400)
       return { error: error instanceof Error ? error.message : "Invalid patch" }
@@ -63,7 +63,7 @@ export function registerSettingsRoutes(app: FastifyInstance, deps: RouteDeps) {
 
   app.patch<{ Params: { owner: string } }>("/api/storage/state/:owner", async (request, reply) => {
     try {
-      return deps.settings.mergePatchOwner("state", request.params.owner, request.body ?? {})
+      return await deps.settings.mergePatchOwner("state", request.params.owner, request.body ?? {})
     } catch (error) {
       reply.code(400)
       return { error: error instanceof Error ? error.message : "Invalid patch" }

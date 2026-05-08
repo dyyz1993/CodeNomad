@@ -1,5 +1,6 @@
 import { ChildProcess, spawn, spawnSync } from "child_process"
-import { existsSync, statSync } from "fs"
+import { access, stat } from "node:fs/promises"
+import { constants } from "node:fs"
 import path from "path"
 import { EventBus } from "../events/bus"
 import { LogLevel, WorkspaceLogEntry } from "../api-types"
@@ -52,7 +53,7 @@ export class WorkspaceRuntime {
   constructor(private readonly eventBus: EventBus, private readonly logger: Logger) {}
 
   async launch(options: LaunchOptions): Promise<{ pid: number; port: number; exitPromise: Promise<ProcessExitInfo>; getLastOutput: () => string }> {
-    this.validateFolder(options.folder)
+    await this.validateFolder(options.folder)
 
     const logLevel = typeof options.logLevel === "string" ? options.logLevel.toUpperCase() : "DEBUG"
     const args = ["serve", "--port", "0", "--print-logs", "--log-level", logLevel]
@@ -440,12 +441,14 @@ export class WorkspaceRuntime {
     this.eventBus.publish({ type: "workspace.log", entry })
   }
 
-  private validateFolder(folder: string) {
+  private async validateFolder(folder: string) {
     const resolved = path.resolve(folder)
-    if (!existsSync(resolved)) {
+    try {
+      await access(resolved, constants.F_OK)
+    } catch {
       throw new Error(`Folder does not exist: ${resolved}`)
     }
-    const stats = statSync(resolved)
+    const stats = await stat(resolved)
     if (!stats.isDirectory()) {
       throw new Error(`Path is not a directory: ${resolved}`)
     }

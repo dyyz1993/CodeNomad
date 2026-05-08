@@ -13,11 +13,11 @@ describe("workspace search cache", () => {
     clearWorkspaceSearchCache()
   })
 
-  it("expires cached candidates after the TTL", () => {
+  it("expires cached candidates after the TTL", async () => {
     const workspacePath = "/tmp/workspace"
     const startTime = 1_000
 
-    refreshWorkspaceCandidates(workspacePath, () => [createEntry("file-a")], startTime)
+    await refreshWorkspaceCandidates(workspacePath, async () => [createEntry("file-a")], startTime)
 
     const beforeExpiry = getWorkspaceCandidates(
       workspacePath,
@@ -34,15 +34,15 @@ describe("workspace search cache", () => {
     assert.equal(afterExpiry, undefined)
   })
 
-  it("replaces cached entries when manually refreshed", () => {
+  it("replaces cached entries when manually refreshed", async () => {
     const workspacePath = "/tmp/workspace"
 
-    refreshWorkspaceCandidates(workspacePath, () => [createEntry("file-a")], 5_000)
+    await refreshWorkspaceCandidates(workspacePath, async () => [createEntry("file-a")], 5_000)
     const initial = getWorkspaceCandidates(workspacePath, 5_001)
     assert.ok(initial)
     assert.equal(initial[0].name, "file-a")
 
-    refreshWorkspaceCandidates(workspacePath, () => [createEntry("file-b")], 6_000)
+    await refreshWorkspaceCandidates(workspacePath, async () => [createEntry("file-b")], 6_000)
     const refreshed = getWorkspaceCandidates(workspacePath, 6_001)
     assert.ok(refreshed)
     assert.equal(refreshed[0].name, "file-b")

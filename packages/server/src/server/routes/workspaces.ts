@@ -101,7 +101,7 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: RouteDeps) {
   }>("/api/workspaces/:id/files/search", async (request, reply) => {
     try {
       const query = WorkspaceFileSearchQuerySchema.parse(request.query ?? {})
-      return deps.workspaceManager.searchFiles(request.params.id, query.q, {
+      return await deps.workspaceManager.searchFiles(request.params.id, query.q, {
         limit: query.limit,
         type: query.type,
         refresh: query.refresh,

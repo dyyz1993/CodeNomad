@@ -1,6 +1,9 @@
 import path from "path"
-import { spawnSync } from "child_process"
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
 import { connect } from "net"
+
+const execFileAsync = promisify(execFile)
 import { EventBus } from "../events/bus"
 import type { SettingsService } from "../settings/service"
 import type { BinaryResolver } from "../settings/binaries"
@@ -40,6 +43,29 @@ export class WorkspaceManager {
   private readonly opencodeConfigDir: string
   private readonly opencodeAuth = new Map<string, { username: string; password: string; authorization: string }>()
 
+  private readonly MAX_CONCURRENT_STARTUPS = 3
+  private activeStartups = 0
+  private startupQueue: Array<() => void> = []
+
+  private async acquireStartupSlot(): Promise<void> {
+    if (this.activeStartups < this.MAX_CONCURRENT_STARTUPS) {
+      this.activeStartups++
+      return
+    }
+    return new Promise<void>((resolve) => {
+      this.startupQueue.push(resolve)
+    })
+  }
+
+  private releaseStartupSlot(): void {
+    this.activeStartups--
+    const next = this.startupQueue.shift()
+    if (next) {
+      this.activeStartups++
+      next()
+    }
+  }
+
   constructor(private readonly options: WorkspaceManagerOptions) {
     this.runtime = new WorkspaceRuntime(this.options.eventBus, this.options.logger)
     this.opencodeConfigDir = getOpencodeConfigDir()
@@ -67,7 +93,7 @@ export class WorkspaceManager {
     return browser.list(relativePath)
   }
 
-  searchFiles(workspaceId: string, query: string, options?: WorkspaceFileSearchOptions): FileSystemEntry[] {
+  async searchFiles(workspaceId: string, query: string, options?: WorkspaceFileSearchOptions): Promise<FileSystemEntry[]> {
     const workspace = this.requireWorkspace(workspaceId)
     return searchWorkspaceFiles(workspace.path, query, options)
   }
@@ -90,10 +116,10 @@ export class WorkspaceManager {
   }
 
   async create(folder: string, name?: string): Promise<WorkspaceDescriptor> {
- 
+    await this.acquireStartupSlot()
     const id = `${Date.now().toString(36)}`
-    const binary = this.options.binaryResolver.resolveDefault()
-    const resolvedBinaryPath = this.resolveBinaryPath(binary.path)
+    const binary = await this.options.binaryResolver.resolveDefault()
+    const resolvedBinaryPath = await this.resolveBinaryPath(binary.path)
     const workspacePath = path.isAbsolute(folder) ? folder : path.resolve(this.options.rootDir, folder)
     clearWorkspaceSearchCache(workspacePath)
 
@@ -120,7 +146,7 @@ export class WorkspaceManager {
 
     this.options.eventBus.publish({ type: "workspace.created", workspace: descriptor })
 
-    const serverConfig = this.options.settings.getOwner("config", "server")
+    const serverConfig = await this.options.settings.getOwner("config", "server")
     const envVars = (serverConfig as any)?.environmentVariables
     const userEnvironment = envVars && typeof envVars === "object" && !Array.isArray(envVars) ? (envVars as any) : {}
     const serverBaseUrl = this.options.getServerBaseUrl()
@@ -178,6 +204,8 @@ export class WorkspaceManager {
       this.options.eventBus.publish({ type: "workspace.error", workspace: descriptor })
       this.options.logger.error({ workspaceId: id, err: error }, "Workspace failed to start")
       throw error
+    } finally {
+      this.releaseStartupSlot()
     }
   }
 
@@ -238,7 +266,7 @@ export class WorkspaceManager {
     return workspace
   }
 
-  private resolveBinaryPath(identifier: string): string {
+  private async resolveBinaryPath(identifier: string): Promise<string> {
     if (!identifier) {
       return identifier
     }
@@ -251,9 +279,23 @@ export class WorkspaceManager {
     const locator = process.platform === "win32" ? "where" : "which"
 
     try {
-      const result = spawnSync(locator, [identifier], { encoding: "utf8" })
-      if (result.status === 0 && result.stdout) {
-        const candidates = result.stdout
+      let stdout: string
+      let stderr: string
+      try {
+        const result = await execFileAsync(locator, [identifier], { encoding: "utf8" })
+        stdout = result.stdout
+        stderr = result.stderr
+      } catch (err: any) {
+        stdout = err?.stdout ?? ""
+        stderr = err?.stderr ?? ""
+        if (!stdout && err?.code === "ENOENT") {
+          this.options.logger.warn({ identifier, err }, "Failed to resolve binary path via locator command")
+          return identifier
+        }
+      }
+
+      if (stdout) {
+        const candidates = stdout
           .split(/\r?\n/)
           .map((line) => line.trim())
           .filter((line) => line.length > 0)
@@ -264,8 +306,10 @@ export class WorkspaceManager {
           this.options.logger.debug({ identifier, resolved, candidates }, "Resolved binary path from system PATH")
           return resolved
         }
-      } else if (result.error) {
-        this.options.logger.warn({ identifier, err: result.error }, "Failed to resolve binary path via locator command")
+      }
+
+      if (stderr) {
+        this.options.logger.warn({ identifier, stderr }, "Locator command reported errors")
       }
     } catch (error) {
       this.options.logger.warn({ identifier, err: error }, "Failed to resolve binary path from system PATH")

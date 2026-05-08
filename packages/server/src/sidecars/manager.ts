@@ -29,19 +29,24 @@ export class SideCarManager {
   private readonly configs = new Map<string, SideCarConfigRecord>()
   private readonly runtime = new Map<string, SideCarRuntimeRecord>()
 
-  constructor(private readonly options: SideCarManagerOptions) {
-    for (const record of this.loadConfiguredSideCars()) {
-      this.configs.set(record.id, record)
-      this.runtime.set(record.id, { status: "stopped" })
+  private constructor(private readonly options: SideCarManagerOptions) {}
+
+  static async create(options: SideCarManagerOptions): Promise<SideCarManager> {
+    const instance = new SideCarManager(options)
+    for (const record of await instance.loadConfiguredSideCars()) {
+      instance.configs.set(record.id, record)
+      instance.runtime.set(record.id, { status: "stopped" })
     }
 
     queueMicrotask(() => {
-      for (const record of this.configs.values()) {
-        void this.refreshPortSideCar(record.id).catch((error) => {
-          this.options.logger.warn({ sidecarId: record.id, err: error }, "Failed to probe sidecar port")
+      for (const record of instance.configs.values()) {
+        void instance.refreshPortSideCar(record.id).catch((error) => {
+          instance.options.logger.warn({ sidecarId: record.id, err: error }, "Failed to probe sidecar port")
         })
       }
     })
+
+    return instance
   }
 
   async list(): Promise<SideCar[]> {
@@ -82,7 +87,7 @@ export class SideCarManager {
 
     this.configs.set(record.id, record)
     this.runtime.set(record.id, { status: "stopped" })
-    this.persistConfigs()
+    await this.persistConfigs()
     await this.refreshPortSideCar(record.id)
     return this.toSideCar(record)
   }
@@ -104,7 +109,7 @@ export class SideCarManager {
     record.prefixMode = typeof input.prefixMode === "string" ? input.prefixMode : record.prefixMode
     record.updatedAt = new Date().toISOString()
 
-    this.persistConfigs()
+    await this.persistConfigs()
     await this.refreshPortSideCar(id)
     return this.toSideCar(record)
   }
@@ -115,7 +120,7 @@ export class SideCarManager {
 
     this.configs.delete(id)
     this.runtime.delete(id)
-    this.persistConfigs()
+    await this.persistConfigs()
     this.options.eventBus.publish({ type: "sidecar.removed", sidecarId: id })
     return true
   }
@@ -199,13 +204,13 @@ export class SideCarManager {
     return record
   }
 
-  private persistConfigs() {
+  private async persistConfigs() {
     const sidecars = Array.from(this.configs.values()).map((record) => ({ ...record }))
-    this.options.settings.mergePatchOwner("config", "server", { sidecars })
+    await this.options.settings.mergePatchOwner("config", "server", { sidecars })
   }
 
-  private loadConfiguredSideCars(): SideCarConfigRecord[] {
-    const serverConfig = this.options.settings.getOwner("config", "server") as { sidecars?: unknown }
+  private async loadConfiguredSideCars(): Promise<SideCarConfigRecord[]> {
+    const serverConfig = await this.options.settings.getOwner("config", "server") as { sidecars?: unknown }
     const list = Array.isArray(serverConfig?.sidecars) ? serverConfig.sidecars : []
     const records: SideCarConfigRecord[] = []
     for (const item of list) {

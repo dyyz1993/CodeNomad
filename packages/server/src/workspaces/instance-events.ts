@@ -8,6 +8,7 @@ import { InstanceStreamEvent, InstanceStreamStatus } from "../api-types"
 const INSTANCE_HOST = "127.0.0.1"
 const STREAM_AGENT = new UndiciAgent({ bodyTimeout: 0, headersTimeout: 0 })
 const RECONNECT_DELAY_MS = 1000
+const LOG_THROTTLE_MS = 50
 
 interface InstanceEventBridgeOptions {
   workspaceManager: WorkspaceManager
@@ -22,6 +23,7 @@ interface ActiveStream {
 
 export class InstanceEventBridge {
   private readonly streams = new Map<string, ActiveStream>()
+  private readonly lastLogTime = new Map<string, number>()
 
   constructor(private readonly options: InstanceEventBridgeOptions) {
     const bus = this.options.eventBus
@@ -68,6 +70,7 @@ export class InstanceEventBridge {
     }
     active.controller.abort()
     this.streams.delete(workspaceId)
+    this.lastLogTime.delete(workspaceId)
     this.publishStatus(workspaceId, "disconnected", reason)
   }
 
@@ -194,6 +197,16 @@ export class InstanceEventBridge {
       if (this.options.logger.isLevelEnabled("trace")) {
         this.options.logger.trace({ workspaceId, event }, "Instance SSE event payload")
       }
+
+      if ((event as any).type === "workspace.log") {
+        const now = Date.now()
+        const last = this.lastLogTime.get(workspaceId) ?? 0
+        if (now - last < LOG_THROTTLE_MS) {
+          return
+        }
+        this.lastLogTime.set(workspaceId, now)
+      }
+
       this.options.eventBus.publish({ type: "instance.event", instanceId: workspaceId, event })
     } catch (error) {
       this.options.logger.warn({ workspaceId, chunk: payload, err: error }, "Failed to parse instance SSE payload")

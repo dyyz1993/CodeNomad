@@ -17,6 +17,7 @@ let nextClientId = 0
 const ConnectionQuerySchema = z.object({
   clientId: z.string().trim().min(1),
   connectionId: z.string().trim().min(1),
+  workspaceId: z.string().trim().optional(),
 })
 
 const PongBodySchema = ConnectionQuerySchema.extend({
@@ -38,7 +39,34 @@ export function registerEventRoutes(app: FastifyInstance, deps: RouteDeps) {
     reply.raw.flushHeaders?.()
     reply.hijack()
 
+    const filterWorkspaceId = connection.workspaceId
+
+    const getEventWorkspaceId = (event: WorkspaceEventPayload): string | undefined => {
+      switch (event.type) {
+        case "workspace.created":
+        case "workspace.started":
+        case "workspace.error":
+          return event.workspace?.id
+        case "workspace.stopped":
+          return event.workspaceId
+        case "workspace.log":
+          return event.entry.workspaceId
+        case "instance.event":
+        case "instance.eventStatus":
+        case "instance.dataChanged":
+          return event.instanceId
+        default:
+          return undefined
+      }
+    }
+
     const send = (event: WorkspaceEventPayload) => {
+      if (filterWorkspaceId) {
+        const eventWsId = getEventWorkspaceId(event)
+        if (eventWsId && eventWsId !== filterWorkspaceId) {
+          return
+        }
+      }
       deps.logger.debug({ clientId, type: event.type }, "SSE event dispatched")
       if (deps.logger.isLevelEnabled("trace")) {
         deps.logger.trace({ clientId, event }, "SSE event payload")
