@@ -168,13 +168,14 @@ function resolvePath(filePath: string) {
   return path.resolve(filePath)
 }
 
+const DEFAULT_SESSION_MAX_AGE = 315360000 // 10 years in seconds
+
 function buildSessionCookie(name: string, value: string, options?: { maxAgeSeconds?: number; secure?: boolean }) {
+  const maxAge = options?.maxAgeSeconds ?? DEFAULT_SESSION_MAX_AGE
   const parts = [`${name}=${encodeURIComponent(value)}`, "HttpOnly", "Path=/", "SameSite=Lax"]
   if (options?.secure) {
     parts.push("Secure")
   }
-  if (options?.maxAgeSeconds !== undefined) {
-    parts.push(`Max-Age=${Math.max(0, Math.floor(options.maxAgeSeconds))}`)
-  }
+  parts.push(`Max-Age=${Math.max(0, Math.floor(maxAge))}`)
   return parts.join("; ")
 }

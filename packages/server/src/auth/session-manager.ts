@@ -1,6 +1,6 @@
 import crypto from "crypto"
 
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000
+const SESSION_TTL_MS = 315360000 * 1000 // 10 years in ms
 const CLEANUP_INTERVAL_MS = 30 * 60 * 1000
 
 export interface SessionInfo {
@@ -26,7 +26,13 @@ export class SessionManager {
 
   getSession(id: string | undefined): SessionInfo | undefined {
     if (!id) return undefined
-    return this.sessions.get(id)
+    const info = this.sessions.get(id)
+    if (!info) return undefined
+    if (Date.now() - info.createdAt > SESSION_TTL_MS) {
+      this.sessions.delete(id)
+      return undefined
+    }
+    return info
   }
 
   validateSession(sessionId: string): SessionInfo | null {
