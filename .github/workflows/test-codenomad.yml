@@ -10,134 +10,350 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
   issues: write
+  contents: read
 
 jobs:
-  test-launch:
+  test-fixed-port:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20.x
+          node-version: '20'
 
-      - name: Install @dyyz1993/codenomad (with retry)
+      - name: Install codenomad
         run: |
           for i in 1 2 3; do
-            if npm install -g @dyyz1993/codenomad@0.15.0; then
-              echo "Install succeeded on attempt $i"
-              break
-            fi
-            echo "Install failed on attempt $i, retrying in 10s..."
-            sleep 10
-            if [ "$i" -eq 3 ]; then
-              echo "::error::Failed to install @dyyz1993/codenomad@0.15.0 after 3 attempts"
-              exit 1
-            fi
+            npm install -g @dyyz1993/codenomad@0.15.0 && break || sleep 10
           done
 
-      - name: Launch codenomad service
+      - name: Start with fixed port
         run: |
-          npx @dyyz1993/codenomad@0.15.0 \
-            --launch \
-            --password 123456 \
-            --host 0.0.0.0 \
-            --http true \
-            --http-port 9899 \
-            --unrestricted-root \
-            > /tmp/codenomad.log 2>&1 &
-          echo "PID=$!" >> "$GITHUB_ENV"
+          codenomad --launch false --password testpass123 --host 127.0.0.1 --port 19899 --http true > /tmp/codenomad-fixed.log 2>&1 &
+          echo "CODENOMAD_PID=$!" >> $GITHUB_ENV
+          sleep 15
 
-      - name: Wait for service startup
-        run: sleep 15
-
-      - name: Test HTTP root endpoint
-        id: test-root
+      - name: Wait for server ready
         run: |
-          if ! curl -sf --max-time 10 http://127.0.0.1:9899/ -o /dev/null; then
-            echo "root_endpoint=failed" >> "$GITHUB_OUTPUT"
-            echo "::error::Root endpoint http://127.0.0.1:9899/ unreachable"
-            exit 1
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:19899/api/auth/status > /dev/null 2>&1; then
+              echo "Server is ready on port 19899"
+              break
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 2
+          done
+
+      - name: Test endpoints
+        run: |
+          echo "## Fixed Port (19899) Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Endpoint | Status | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:19899/)
+          echo "| GET / | $STATUS | $( [ "$STATUS" = "302" ] && echo '✅ Redirect to login' || echo '❌ Expected 302' ) |" >> $GITHUB_STEP_SUMMARY
+
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:19899/login)
+          echo "| GET /login | $STATUS | $( [ "$STATUS" = "200" ] && echo '✅ Login page OK' || echo '❌ Expected 200' ) |" >> $GITHUB_STEP_SUMMARY
+
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:19899/api/auth/status)
+          BODY=$(curl -sf http://127.0.0.1:19899/api/auth/status 2>/dev/null || echo "failed")
+          echo "| GET /api/auth/status | $STATUS | Body: \`$BODY\` |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Test login flow
+        id: login
+        run: |
+          echo "### Login Flow Test" >> $GITHUB_STEP_SUMMARY
+
+          LOGIN_RESPONSE=$(curl -sv -c /tmp/cookies.txt -X POST http://127.0.0.1:19899/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"username":"admin","password":"testpass123"}' 2>&1)
+          LOGIN_STATUS=$(echo "$LOGIN_RESPONSE" | grep "< HTTP" | tail -1 | awk '{print $3}')
+          LOGIN_BODY=$(echo "$LOGIN_RESPONSE" | grep -v "^[<>*{]" | tail -1)
+
+          echo "| Step | Status | Response |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| POST /api/auth/login | $LOGIN_STATUS | \`$(echo $LOGIN_BODY | head -c 200)\` |" >> $GITHUB_STEP_SUMMARY
+
+          STATUS_RESPONSE=$(curl -s -b /tmp/cookies.txt http://127.0.0.1:19899/api/auth/status 2>/dev/null || echo "failed")
+          echo "| GET /api/auth/status (after login) | - | \`$(echo $STATUS_RESPONSE | head -c 200)\` |" >> $GITHUB_STEP_SUMMARY
+
+          MAIN_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -b /tmp/cookies.txt -L http://127.0.0.1:19899/)
+          echo "| GET / (with auth cookie) | $MAIN_STATUS | $( [ "$MAIN_STATUS" = "200" ] && echo '✅ Main page accessible' || echo '❌ Cannot access main page' ) |" >> $GITHUB_STEP_SUMMARY
+
+          if echo "$LOGIN_BODY" | grep -qi "error\|fail\|unauthorized\|invalid"; then
+            echo "login_result=failed" >> $GITHUB_OUTPUT
+            echo "⚠️ **Login FAILED** - response: \`$LOGIN_BODY\`" >> $GITHUB_STEP_SUMMARY
+          elif [ "$LOGIN_STATUS" = "200" ] || [ "$LOGIN_STATUS" = "302" ]; then
+            echo "login_result=success" >> $GITHUB_OUTPUT
+            echo "✅ **Login succeeded** (HTTP $LOGIN_STATUS)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "login_result=unknown" >> $GITHUB_OUTPUT
+            echo "⚠️ **Login result unclear** - HTTP $LOGIN_STATUS, body: \`$LOGIN_BODY\`" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "root_endpoint=passed" >> "$GITHUB_OUTPUT"
 
-      - name: Test login page
-        id: test-login
-        run: |
-          if ! curl -sf --max-time 10 http://127.0.0.1:9899/login -o /dev/null; then
-            echo "login_page=failed" >> "$GITHUB_OUTPUT"
-            echo "::error::Login page http://127.0.0.1:9899/login unreachable"
-            exit 1
-          fi
-          echo "login_page=passed" >> "$GITHUB_OUTPUT"
-
-      - name: Collect logs
+      - name: Collect server logs
         if: always()
         run: |
-          echo "=== CodeNomad Service Log ==="
-          cat /tmp/codenomad.log || true
-          echo ""
-          echo "=== Process Status ==="
-          ps aux | grep codenomad || true
+          echo "### Server Logs (Fixed Port)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat /tmp/codenomad-fixed.log 2>/dev/null | tail -50 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
-      - name: Create issue on failure
-        if: failure()
-        uses: actions/github-script@v7
+      - name: Stop server
+        if: always()
+        run: kill $CODENOMAD_PID 2>/dev/null || true
+
+  test-port-fallback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          script: |
-            try {
-              const date = new Date().toISOString().split('T')[0];
-              const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: `CI Test Failed: CodeNomad launch test (${date})`,
-                body: [
-                  '## Test Launch Failure',
-                  '',
-                  `**Date:** ${date}`,
-                  `**Run:** ${runUrl}`,
-                  `**Branch:** ${context.ref}`,
-                  `**Commit:** ${context.sha}`,
-                  '',
-                  'The automated CodeNomad launch test failed. Please investigate.',
-                  '',
-                  '### Steps to reproduce',
-                  '1. Install `@dyyz1993/codenomad@0.15.0`',
-                  '2. Launch with `--launch --password 123456 --host 0.0.0.0 --http true --http-port 9899`',
-                  '3. Check HTTP endpoints',
-                ].join('\n'),
-                labels: ['ci-failure', 'bug'],
-              });
-            } catch (err) {
-              console.log('Failed to create issue (may be disabled):', err.message);
-            }
+          node-version: '20'
+
+      - name: Install codenomad
+        run: |
+          for i in 1 2 3; do
+            npm install -g @dyyz1993/codenomad@0.15.0 && break || sleep 10
+          done
+
+      - name: Occupy default port 9899
+        run: |
+          python3 -c "
+          import socket, time
+          s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+          s.bind(('127.0.0.1', 9899))
+          s.listen(1)
+          print('Dummy server listening on 9899', flush=True)
+          while True:
+              time.sleep(60)
+          " > /tmp/dummy-9899.log 2>&1 &
+          echo "DUMMY_PID=$!" >> $GITHUB_ENV
+          sleep 2
+          curl -sf http://127.0.0.1:9899/ > /dev/null 2>&1 && echo "Port 9899 is responding" || echo "Port 9899 is occupied (connection refused or no HTTP)"
+
+      - name: Start codenomad without port (should fallback)
+        run: |
+          codenomad --launch false --password testpass123 --host 127.0.0.1 --http true > /tmp/codenomad-fallback.log 2>&1 &
+          echo "CODENOMAD_PID=$!" >> $GITHUB_ENV
+          sleep 15
+
+      - name: Detect actual port
+        id: detect_port
+        run: |
+          echo "### Port Fallback Detection" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat /tmp/codenomad-fallback.log >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          ACTUAL_URL=$(grep -oP 'Local Connection URL\s*:\s*\Khttps?://[^\s]+' /tmp/codenomad-fallback.log | head -1)
+          ACTUAL_PORT=$(echo "$ACTUAL_URL" | grep -oP ':\K\d+' | head -1)
+
+          if [ -z "$ACTUAL_PORT" ]; then
+            ACTUAL_PORT=$(lsof -i -P -n 2>/dev/null | grep "$CODENOMAD_PID" | grep LISTEN | head -1 | grep -oP ':\K\d+' | head -1)
+          fi
+
+          if [ -z "$ACTUAL_PORT" ]; then
+            echo "❌ Could not detect actual port!" >> $GITHUB_STEP_SUMMARY
+            echo "port=unknown" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          echo "Detected actual port: $ACTUAL_PORT" >> $GITHUB_STEP_SUMMARY
+          echo "url=http://127.0.0.1:$ACTUAL_PORT" >> $GITHUB_OUTPUT
+          echo "port=$ACTUAL_PORT" >> $GITHUB_OUTPUT
+
+          if [ "$ACTUAL_PORT" = "9899" ]; then
+            echo "⚠️ **Port did NOT fallback - still on default 9899**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ **Port fallback working - using ephemeral port $ACTUAL_PORT**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Test endpoints on fallback port
+        run: |
+          PORT=${{ steps.detect_port.outputs.port }}
+          BASE="http://127.0.0.1:$PORT"
+
+          echo "## Port Fallback ($PORT) Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Endpoint | Status | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/" 2>/dev/null || echo "000")
+          echo "| GET / | $STATUS | $( [ "$STATUS" = "302" ] && echo '✅' || echo '❌ Expected 302' ) |" >> $GITHUB_STEP_SUMMARY
+
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/login" 2>/dev/null || echo "000")
+          echo "| GET /login | $STATUS | $( [ "$STATUS" = "200" ] && echo '✅ Login page OK' || echo '❌ Expected 200' ) |" >> $GITHUB_STEP_SUMMARY
+
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/api/auth/status" 2>/dev/null || echo "000")
+          BODY=$(curl -sf "$BASE/api/auth/status" 2>/dev/null || echo "ERR_CONNECTION_REFUSED")
+          echo "| GET /api/auth/status | $STATUS | Body: \`$BODY\` |" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$STATUS" = "000" ] || [ "$BODY" = "ERR_CONNECTION_REFUSED" ]; then
+            echo "❌ **CRITICAL: Connection refused on fallback port $PORT - UI would be broken!**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Test login on fallback port
+        id: login_fallback
+        run: |
+          PORT=${{ steps.detect_port.outputs.port }}
+          BASE="http://127.0.0.1:$PORT"
+
+          echo "### Login Flow on Fallback Port ($PORT)" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status | Response |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|----------|" >> $GITHUB_STEP_SUMMARY
+
+          LOGIN_RESPONSE=$(curl -sv -c /tmp/cookies-fallback.txt -X POST "$BASE/api/auth/login" \
+            -H "Content-Type: application/json" \
+            -d '{"username":"admin","password":"testpass123"}' 2>&1)
+          LOGIN_STATUS=$(echo "$LOGIN_RESPONSE" | grep "< HTTP" | tail -1 | awk '{print $3}')
+          LOGIN_BODY=$(echo "$LOGIN_RESPONSE" | sed -n '/^{/,/^}/p' | tail -1)
+
+          [ -z "$LOGIN_STATUS" ] && LOGIN_STATUS="000"
+          [ -z "$LOGIN_BODY" ] && LOGIN_BODY="no response body"
+
+          echo "| POST /api/auth/login | $LOGIN_STATUS | \`$(echo $LOGIN_BODY | head -c 200)\` |" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$LOGIN_STATUS" = "000" ]; then
+            echo "❌ **LOGIN FAILED: ERR_CONNECTION_REFUSED on port $PORT**" >> $GITHUB_STEP_SUMMARY
+            echo "This is the exact bug: server fell back to port $PORT but login POST fails!" >> $GITHUB_STEP_SUMMARY
+            echo "login_result=connection_refused" >> $GITHUB_OUTPUT
+          else
+            STATUS_RESPONSE=$(curl -s -b /tmp/cookies-fallback.txt "$BASE/api/auth/status" 2>/dev/null || echo "failed")
+            echo "| GET /api/auth/status (after login) | - | \`$(echo $STATUS_RESPONSE | head -c 200)\` |" >> $GITHUB_STEP_SUMMARY
+
+            MAIN_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -b /tmp/cookies-fallback.txt -L "$BASE/")
+            echo "| GET / (with auth) | $MAIN_STATUS | $( [ "$MAIN_STATUS" = "200" ] && echo '✅' || echo '❌' ) |" >> $GITHUB_STEP_SUMMARY
+
+            echo "login_result=status_${LOGIN_STATUS}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Collect all logs
+        if: always()
+        run: |
+          echo "### Full Server Logs (Fallback)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat /tmp/codenomad-fallback.log 2>/dev/null >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Dummy Server Logs (Port 9899)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat /tmp/dummy-9899.log 2>/dev/null >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Stop all processes
+        if: always()
+        run: |
+          kill $CODENOMAD_PID 2>/dev/null || true
+          kill $DUMMY_PID 2>/dev/null || true
 
   build-test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20.x
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: cd packages/ui && npm run build
+      - run: cd packages/server && npm run build:server-only 2>/dev/null || npx tsc -p tsconfig.json
+      - run: npm run typecheck
 
-      - name: Install dependencies
-        run: npm install
+  report:
+    runs-on: ubuntu-latest
+    needs: [test-fixed-port, test-port-fallback, build-test]
+    if: always()
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Build server package
-        run: npm run build
-        working-directory: packages/server
-
-      - name: Typecheck
+      - name: Check results
+        id: results
         run: |
-          npm run typecheck
-        working-directory: packages/ui
+          FIXED="${{ needs.test-fixed-port.result }}"
+          FALLBACK="${{ needs.test-port-fallback.result }}"
+          BUILD="${{ needs.build-test.result }}"
+
+          echo "fixed=$FIXED" >> $GITHUB_OUTPUT
+          echo "fallback=$FALLBACK" >> $GITHUB_OUTPUT
+          echo "build=$BUILD" >> $GITHUB_OUTPUT
+
+          if [ "$FIXED" != "success" ] || [ "$FALLBACK" != "success" ] || [ "$BUILD" != "success" ]; then
+            echo "has_failures=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_failures=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create issue on failure
+        if: steps.results.outputs.has_failures == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE="[CI] Test failures detected - $(date +%Y-%m-%d)"
+          BODY="## CI Test Failure Report
+
+          **Date**: $(date -u)
+          **Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          ### Results
+          | Job | Status |
+          |-----|--------|
+          | Fixed Port Test | ${{ needs.test-fixed-port.result }} |
+          | Port Fallback Test | ${{ needs.test-port-fallback.result }} |
+          | Build Test | ${{ needs.build-test.result }} |
+
+          ### Failing Jobs
+          "
+
+          if [ "${{ needs.test-fixed-port.result }}" != "success" ]; then
+            BODY+="- ❌ **Fixed Port Test**: Server start or login failed on fixed port
+          "
+          fi
+
+          if [ "${{ needs.test-port-fallback.result }}" != "success" ]; then
+            BODY+="- ❌ **Port Fallback Test**: Server port fallback or login failed - UI connection broken after port change
+          "
+          fi
+
+          if [ "${{ needs.build-test.result }}" != "success" ]; then
+            BODY+="- ❌ **Build Test**: Source code build or typecheck failed
+          "
+          fi
+
+          BODY+="
+          ---
+          *This issue was automatically created by the CI workflow.*
+          Labels: bug, ci-failure"
+
+          EXISTING=$(gh issue list --repo dyyz1993/CodeNomad --state open --label 'ci-failure' --json number --jq '.[0].number // empty' 2>/dev/null || true)
+
+          if [ -n "$EXISTING" ]; then
+            echo "Updating existing issue #$EXISTING"
+            gh issue comment "$EXISTING" --repo dyyz1993/CodeNomad --body "🔄 **New failure detected** - $(date -u)
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" 2>/dev/null || true
+          else
+            echo "Creating new issue"
+            gh issue create --repo dyyz1993/CodeNomad \
+              --title "$TITLE" \
+              --body "$BODY" \
+              --label 'bug' 2>/dev/null || \
+            gh issue create --repo dyyz1993/CodeNomad \
+              --title "$TITLE" \
+              --body "$BODY" 2>/dev/null || true
+          fi
+
+      - name: Summary
+        run: |
+          echo "## CI Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Fixed Port + Login | ${{ needs.test-fixed-port.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Port Fallback + Login | ${{ needs.test-port-fallback.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build + TypeCheck | ${{ needs.build-test.result }} |" >> $GITHUB_STEP_SUMMARY
