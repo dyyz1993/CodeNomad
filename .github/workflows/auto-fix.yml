@@ -1,0 +1,95 @@
+name: Auto Fix Issues
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to fix'
+        required: false
+
+permissions:
+  issues: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare-fix:
+    runs-on: ubuntu-latest
+    if: contains(github.event.label.name, 'bug') || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Get issue details
+        id: issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.issue_number }}" ]; then
+            ISSUE_NUM="${{ inputs.issue_number }}"
+          else
+            ISSUE_NUM="${{ github.event.issue.number }}"
+          fi
+          
+          ISSUE_DATA=$(gh issue view "$ISSUE_NUM" --repo dyyz1993/CodeNomad --json title,body,labels)
+          echo "number=$ISSUE_NUM" >> $GITHUB_OUTPUT
+          echo "title=$(echo "$ISSUE_DATA" | jq -r '.title')" >> $GITHUB_OUTPUT
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$ISSUE_DATA" | jq -r '.body' >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "## Issue #$ISSUE_NUM" >> $GITHUB_STEP_SUMMARY
+          echo "Title: $(echo "$ISSUE_DATA" | jq -r '.title')" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Comment on issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment "${{ steps.issue.outputs.number }}" --repo dyyz1993/CodeNomad --body "🔧 This issue has been queued for investigation. A fix branch will be created shortly." 2>/dev/null || true
+      
+      - name: Create fix branch
+        id: prepare-fix
+        run: |
+          BRANCH_NAME="fix/issue-${{ steps.issue.outputs.number }}"
+          git checkout -b "$BRANCH_NAME"
+          echo "branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          
+      - name: Run diagnostics
+        run: |
+          npm ci --ignore-scripts 2>&1 || true
+          npm run typecheck 2>&1 | tee /tmp/typecheck-output.txt || true
+          
+          echo "## Diagnostic Results" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat /tmp/typecheck-output.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Push diagnostic branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git push origin "${{ steps.prepare-fix.outputs.branch }}" 2>/dev/null || true
+          
+      - name: Comment diagnostic results
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f /tmp/typecheck-output.txt ]; then
+            RESULTS=$(cat /tmp/typecheck-output.txt | head -100)
+            gh issue comment "${{ steps.issue.outputs.number }}" --repo dyyz1993/CodeNomad --body "📋 **Diagnostic Results**
+
+\`\`\`
+${RESULTS}
+\`\`\`
+
+Branch created: \`${{ steps.prepare-fix.outputs.branch }}\`" 2>/dev/null || true
+          fi
