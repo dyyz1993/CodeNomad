@@ -14,6 +14,8 @@ interface RecordDisplayCacheEntry {
 
 const recordDisplayCache = new Map<string, RecordDisplayCacheEntry>()
 
+const MAX_CACHE_ENTRIES = 1000
+
 function makeCacheKey(instanceId: string, messageId: string) {
   return `${instanceId}:${messageId}`
 }
@@ -34,6 +36,12 @@ export function buildRecordDisplayData(instanceId: string, record: MessageRecord
   }
 
   const data: RecordDisplayData = { orderedParts }
+  if (recordDisplayCache.size > MAX_CACHE_ENTRIES) {
+    const keys = Array.from(recordDisplayCache.keys())
+    for (const k of keys.slice(0, Math.floor(keys.length / 2))) {
+      recordDisplayCache.delete(k)
+    }
+  }
   recordDisplayCache.set(cacheKey, { revision: record.revision, data })
   return data
 }

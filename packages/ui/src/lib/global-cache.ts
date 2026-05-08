@@ -12,7 +12,10 @@ export interface CacheEntryParams extends CacheEntryBaseParams {
 type VersionedCacheEntry = {
   version: string
   value: unknown
+  timestamp: number
 }
+
+const DEFAULT_TTL_MS = 5 * 60 * 1000
 
 type CacheValueMap = Map<string, VersionedCacheEntry>
 type CacheScopeMap = Map<string, CacheValueMap>
@@ -95,13 +98,20 @@ export function setCacheEntry<T>(params: CacheEntryParams, value: T | undefined)
   }
 
   const scopeEntries = getScopeValueMap(params, true)
-  scopeEntries?.set(params.cacheId, { version: params.version, value })
+  scopeEntries?.set(params.cacheId, { version: params.version, value, timestamp: Date.now() })
 }
 
 export function getCacheEntry<T>(params: CacheEntryParams): T | undefined {
   const scopeEntries = getScopeValueMap(params, false)
   const entry = scopeEntries?.get(params.cacheId)
   if (!entry || entry.version !== params.version) {
+    return undefined
+  }
+  if (Date.now() - entry.timestamp > DEFAULT_TTL_MS) {
+    const instanceKey = resolveKey(params.instanceId)
+    const sessionKey = resolveKey(params.sessionId)
+    scopeEntries?.delete(params.cacheId)
+    cleanupHierarchy(instanceKey, sessionKey, params.scope)
     return undefined
   }
   return entry.value as T

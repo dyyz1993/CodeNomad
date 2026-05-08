@@ -23,6 +23,8 @@ import type {
 
 const storeLog = getLogger("session")
 
+const MAX_MESSAGES_PER_INSTANCE = 500
+
 interface MessageStoreHooks {
   onSessionCleared?: (instanceId: string, sessionId: string) => void
 }
@@ -446,6 +448,13 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
     if (infoList) {
       for (const info of infoList) {
         const messageId = info.id as string
+        if (messageInfoCache.size > MAX_MESSAGES_PER_INSTANCE) {
+          const entries = Array.from(messageInfoCache.entries())
+          const toDelete = entries.slice(0, Math.floor(entries.length / 2))
+          for (const [key] of toDelete) {
+            messageInfoCache.delete(key)
+          }
+        }
         messageInfoCache.set(messageId, info)
         const currentVersion = nextMessageInfoVersion[messageId] ?? 0
         nextMessageInfoVersion[messageId] = currentVersion + 1
@@ -474,6 +483,36 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
       })
 
       bumpSessionRevision(sessionId)
+
+      // Message windowing: evict oldest messages when exceeding cap
+      const allMessageIds = Object.keys(state.messages)
+      if (allMessageIds.length > MAX_MESSAGES_PER_INSTANCE) {
+        const sortedIds = [...allMessageIds].sort((a, b) => {
+          const msgA = state.messages[a]
+          const msgB = state.messages[b]
+          return (msgA?.createdAt ?? 0) - (msgB?.createdAt ?? 0)
+        })
+        const toRemove = sortedIds.slice(0, allMessageIds.length - MAX_MESSAGES_PER_INSTANCE)
+        if (toRemove.length > 0) {
+          setState("messages", (prev) => {
+            const next = { ...prev }
+            for (const id of toRemove) {
+              delete next[id]
+            }
+            return next
+          })
+          setState("messageInfoVersion", (prev) => {
+            const next = { ...prev }
+            for (const id of toRemove) {
+              delete next[id]
+            }
+            return next
+          })
+          for (const id of toRemove) {
+            messageInfoCache.delete(id)
+          }
+        }
+      }
     })
   }
 
@@ -541,6 +580,36 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
     flushPendingParts(input.id)
     recomputeLastAssistantMessageId(input.sessionId)
     bumpSessionRevision(input.sessionId)
+
+    // Message windowing: evict oldest messages when exceeding cap
+    const allMessageIds = Object.keys(state.messages)
+    if (allMessageIds.length > MAX_MESSAGES_PER_INSTANCE) {
+      const sortedIds = [...allMessageIds].sort((a, b) => {
+        const msgA = state.messages[a]
+        const msgB = state.messages[b]
+        return (msgA?.createdAt ?? 0) - (msgB?.createdAt ?? 0)
+      })
+      const toRemove = sortedIds.slice(0, allMessageIds.length - MAX_MESSAGES_PER_INSTANCE)
+      if (toRemove.length > 0) {
+        setState("messages", (prev) => {
+          const next = { ...prev }
+          for (const id of toRemove) {
+            delete next[id]
+          }
+          return next
+        })
+        setState("messageInfoVersion", (prev) => {
+          const next = { ...prev }
+          for (const id of toRemove) {
+            delete next[id]
+          }
+          return next
+        })
+        for (const id of toRemove) {
+          messageInfoCache.delete(id)
+        }
+      }
+    }
   }
 
   function bufferPendingPart(entry: PendingPartEntry) {
@@ -893,6 +962,13 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
 
   function setMessageInfo(messageId: string, info: MessageInfo) {
     if (!messageId) return
+    if (messageInfoCache.size > MAX_MESSAGES_PER_INSTANCE) {
+      const entries = Array.from(messageInfoCache.entries())
+      const toDelete = entries.slice(0, Math.floor(entries.length / 2))
+      for (const [key] of toDelete) {
+        messageInfoCache.delete(key)
+      }
+    }
     messageInfoCache.set(messageId, info)
     const nextVersion = (state.messageInfoVersion[messageId] ?? 0) + 1
     setState("messageInfoVersion", messageId, nextVersion)
