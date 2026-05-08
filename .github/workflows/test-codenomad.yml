@@ -132,10 +132,10 @@ jobs:
           print('Dummy server listening on 9899', flush=True)
           while True:
               time.sleep(60)
-          " > /tmp/dummy-9899.log 2>&1 &
+          " &
           echo "DUMMY_PID=$!" >> $GITHUB_ENV
           sleep 2
-          curl -sf http://127.0.0.1:9899/ > /dev/null 2>&1 && echo "Port 9899 is responding" || echo "Port 9899 is occupied (connection refused or no HTTP)"
+          ss -tlnp | grep ':9899' && echo "Port 9899 is occupied (dummy server running)" || echo "WARNING: Port 9899 not occupied"
 
       - name: Start codenomad without port (should fallback)
         run: |
