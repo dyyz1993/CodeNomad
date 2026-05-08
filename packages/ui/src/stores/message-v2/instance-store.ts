@@ -1315,6 +1315,7 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
 
    function clearMessages() {
      const allMessageIds = Object.keys(state.messages)
+     const sessionIds = Object.keys(state.sessions)
      clearRecordDisplayCacheForMessages(instanceId, allMessageIds)
 
      batch(() => {
@@ -1340,6 +1341,10 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
      })
 
      messageInfoCache.clear()
+
+     for (const sessionId of sessionIds) {
+       hooks?.onSessionCleared?.(instanceId, sessionId)
+     }
    }
  
      return {

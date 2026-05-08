@@ -79,7 +79,11 @@ class MessageStoreBus {
   clearInstanceData(instanceId: string): void {
     const store = this.stores.get(instanceId)
     if (store) {
+      const sessionIds = store.state.sessionOrder
       store.clearMessages()
+      for (const sessionId of sessionIds) {
+        this.notifySessionCleared(instanceId, sessionId)
+      }
     }
     clearRecordDisplayCacheForInstance(instanceId)
   }
