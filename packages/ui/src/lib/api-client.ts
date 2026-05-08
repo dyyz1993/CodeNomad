@@ -127,6 +127,32 @@ async function readErrorMessage(response: Response): Promise<string> {
   return text
 }
 
+const FALLBACK_PORTS = [9898, 9899, 3000]
+
+async function probeFallbackUrl(path: string, originalBase: string | undefined): Promise<string | null> {
+  const currentOrigin = typeof window !== "undefined" ? window.location?.origin : undefined
+
+  if (currentOrigin && currentOrigin !== originalBase) {
+    try {
+      const url = new URL(path, currentOrigin).toString()
+      const res = await fetch(url, { method: "HEAD", credentials: "include" })
+      if (res.ok || res.status < 500) return currentOrigin
+    } catch {}
+  }
+
+  for (const port of FALLBACK_PORTS) {
+    const candidate = `http://127.0.0.1:${port}`
+    if (candidate === originalBase || candidate === currentOrigin) continue
+    try {
+      const url = new URL(path, candidate).toString()
+      const res = await fetch(url, { method: "HEAD", credentials: "include" })
+      if (res.ok || res.status < 500) return candidate
+    } catch {}
+  }
+
+  return null
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const url = API_BASE ? new URL(path, API_BASE).toString() : path
   const headers = normalizeHeaders(init?.headers)
@@ -152,6 +178,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     return (await response.json()) as T
   } catch (error) {
+    if (error instanceof TypeError && error.message?.includes("fetch")) {
+      const fallback = await probeFallbackUrl(path, API_BASE)
+      if (fallback) {
+        logHttp(`${method} ${path} retrying on fallback ${fallback}`)
+        const fallbackUrl = new URL(path, fallback).toString()
+        const retryResponse = await fetch(fallbackUrl, { ...init, headers, credentials: init?.credentials ?? "include" })
+        if (retryResponse.ok) {
+          if (retryResponse.status === 204) return undefined as T
+          return (await retryResponse.json()) as T
+        }
+      }
+    }
     logHttp(`${method} ${path} failed`, { durationMs: Date.now() - startedAt, error })
     throw error
   }

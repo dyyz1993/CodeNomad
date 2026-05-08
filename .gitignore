@@ -12,4 +12,4 @@ out/
 # Local runtime artifacts
 .codenomad/
 .tmp/
-packages/cloudflare/.wrangler/
+packages/cloudflare/.wrangler/.npmrc

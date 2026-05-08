@@ -101,28 +101,39 @@
           showError("Username and password are required.")
           return
         }
-        try {
-          const res = await fetch("/api/auth/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username, password }),
-            credentials: "include",
-          })
-          if (!res.ok) {
-            let message = ""
-            try {
-              const json = await res.json()
-              message = json && json.error ? String(json.error) : ""
-            } catch {
-              message = ""
+
+        const MAX_RETRIES = 3
+        const RETRY_DELAY_MS = 2000
+
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+          try {
+            const res = await fetch("/api/auth/login", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ username, password }),
+              credentials: "include",
+            })
+            if (!res.ok) {
+              let message = ""
+              try {
+                const json = await res.json()
+                message = json && json.error ? String(json.error) : ""
+              } catch {
+                message = ""
+              }
+              showError(message || `Login failed (${res.status})`)
+              return
             }
-            showError(message || `Login failed (${res.status})`)
+            window.location.replace("/")
             return
+          } catch (e) {
+            if (attempt < MAX_RETRIES) {
+              showError(`Connection failed, retrying (${attempt}/${MAX_RETRIES})...`)
+              await new Promise((r) => setTimeout(r, RETRY_DELAY_MS))
+            } else {
+              showError("Service connection failed. The port may have changed. Please refresh the page and try again.")
+            }
           }
-          // Replace history entry so Back doesn't return to /login.
-          window.location.replace("/")
-        } catch (e) {
-          showError(e && e.message ? e.message : String(e))
         }
       }
 

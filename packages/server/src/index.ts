@@ -82,6 +82,7 @@ function parseCliOptions(argv: string[]): CliOptions {
     .addOption(new Option("--http <enabled>", "Enable HTTP listener (true|false)").env("CLI_HTTP").default("false"))
     .addOption(new Option("--https-port <number>", "HTTPS port (0 for auto)").env("CLI_HTTPS_PORT").default(DEFAULT_HTTPS_PORT).argParser(parsePort))
     .addOption(new Option("--http-port <number>", "HTTP port (0 for auto)").env("CLI_HTTP_PORT").default(DEFAULT_HTTP_PORT).argParser(parsePort))
+    .addOption(new Option("--port <number>", "Shorthand for --http-port").argParser(parsePort))
     .addOption(new Option("--tls-key <path>", "TLS private key (PEM)").env("CLI_TLS_KEY"))
     .addOption(new Option("--tls-cert <path>", "TLS certificate (PEM)").env("CLI_TLS_CERT"))
     .addOption(new Option("--tls-ca <path>", "TLS CA chain (PEM)").env("CLI_TLS_CA"))
@@ -135,6 +136,7 @@ function parseCliOptions(argv: string[]): CliOptions {
     http?: string
     httpsPort: number
     httpPort: number
+    port?: number
     tlsKey?: string
     tlsCert?: string
     tlsCa?: string
@@ -179,12 +181,19 @@ function parseCliOptions(argv: string[]): CliOptions {
     throw new InvalidArgumentError("At least one listener must be enabled (--https or --http)")
   }
 
+  const resolvedHttpPort = parsed.port ?? parsed.httpPort
+  const portExplicit = parsed.port !== undefined
+  const httpsPortExplicit = parsed.httpsPort !== DEFAULT_HTTPS_PORT
+  const resolvedHttpsPort = portExplicit && !httpsPortExplicit && resolvedHttpPort !== DEFAULT_HTTP_PORT
+    ? resolvedHttpPort + 1
+    : parsed.httpsPort
+
   return {
     host: normalizedHost,
     https: httpsEnabled,
     http: httpEnabled,
-    httpsPort: parsed.httpsPort,
-    httpPort: parsed.httpPort,
+    httpsPort: resolvedHttpsPort,
+    httpPort: resolvedHttpPort,
     tlsKeyPath: parsed.tlsKey,
     tlsCertPath: parsed.tlsCert,
     tlsCaPath: parsed.tlsCa,
@@ -360,6 +369,7 @@ async function main() {
     overrideUiDir: uiDirOverride,
     uiDevServerUrl: options.uiDevServer,
     manifestUrl: options.uiManifestUrl,
+    configDir,
     logger: logger.child({ component: "ui" }),
   })
 
@@ -406,8 +416,9 @@ async function main() {
     logger: logger.child({ component: "voice-mode" }),
   })
 
-  const httpsPortExplicit = programHasArg(process.argv.slice(2), "--https-port") || Boolean(process.env.CLI_HTTPS_PORT)
-  const httpPortExplicit = programHasArg(process.argv.slice(2), "--http-port") || Boolean(process.env.CLI_HTTP_PORT)
+  const portArgPassed = programHasArg(process.argv.slice(2), "--port")
+  const httpsPortExplicit = programHasArg(process.argv.slice(2), "--https-port") || Boolean(process.env.CLI_HTTPS_PORT) || portArgPassed
+  const httpPortExplicit = programHasArg(process.argv.slice(2), "--http-port") || programHasArg(process.argv.slice(2), "--port") || Boolean(process.env.CLI_HTTP_PORT)
 
   const httpsBindPort = httpsPortExplicit ? options.httpsPort : 0
   const httpBindPort = httpPortExplicit ? options.httpPort : 0
