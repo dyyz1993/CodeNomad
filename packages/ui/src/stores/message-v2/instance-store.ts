@@ -35,6 +35,7 @@ function createInitialState(instanceId: string): InstanceMessageState {
     sessions: {},
     sessionOrder: [],
     messages: {},
+    messageOrder: [],
     lastAssistantMessageIds: {},
     messageInfoVersion: {},
     pendingParts: {},
@@ -238,6 +239,7 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
   const TODO_TOOL_NAME = "todowrite"
 
   const messageInfoCache = new Map<string, MessageInfo>()
+  let messageInfoCacheCounter = 0
 
   function findLastAssistantMessageId(messageIds: readonly string[]): string | undefined {
     for (let index = messageIds.length - 1; index >= 0; index -= 1) {
@@ -485,15 +487,23 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
 
       bumpSessionRevision(sessionId)
 
-      // Message windowing: evict oldest messages when exceeding cap
-      const allMessageIds = Object.keys(state.messages)
-      if (allMessageIds.length > MAX_MESSAGES_PER_INSTANCE) {
-        const sortedIds = [...allMessageIds].sort((a, b) => {
-          const msgA = state.messages[a]
-          const msgB = state.messages[b]
-          return (msgA?.createdAt ?? 0) - (msgB?.createdAt ?? 0)
-        })
-        const toRemove = sortedIds.slice(0, allMessageIds.length - MAX_MESSAGES_PER_INSTANCE)
+      if (!state.messageOrder) {
+        setState("messageOrder", () => [])
+      }
+      for (const id of incomingIds) {
+        if (!state.messages[id]) continue
+        if (!(state as any).messageOrder?.includes(id)) {
+          setState("messageOrder", (prev: string[]) => [...prev, id])
+        }
+      }
+
+      const order = (state as any).messageOrder as string[] | undefined
+      if (order && order.length > MAX_MESSAGES_PER_INSTANCE) {
+        const toRemove: string[] = []
+        while (order.length - toRemove.length > MAX_MESSAGES_PER_INSTANCE) {
+          const oldestId = order[toRemove.length]
+          toRemove.push(oldestId)
+        }
         if (toRemove.length > 0) {
           setState("messages", (prev) => {
             const next = { ...prev }
@@ -509,6 +519,8 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
             }
             return next
           })
+          const remaining = order.slice(toRemove.length)
+          setState("messageOrder", () => remaining)
           for (const id of toRemove) {
             messageInfoCache.delete(id)
           }
@@ -582,15 +594,20 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
     recomputeLastAssistantMessageId(input.sessionId)
     bumpSessionRevision(input.sessionId)
 
-    // Message windowing: evict oldest messages when exceeding cap
-    const allMessageIds = Object.keys(state.messages)
-    if (allMessageIds.length > MAX_MESSAGES_PER_INSTANCE) {
-      const sortedIds = [...allMessageIds].sort((a, b) => {
-        const msgA = state.messages[a]
-        const msgB = state.messages[b]
-        return (msgA?.createdAt ?? 0) - (msgB?.createdAt ?? 0)
-      })
-      const toRemove = sortedIds.slice(0, allMessageIds.length - MAX_MESSAGES_PER_INSTANCE)
+    if (!(state as any).messageOrder) {
+      setState("messageOrder", () => [])
+    }
+    if (!state.messages[input.id] || !(state as any).messageOrder?.includes(input.id)) {
+      setState("messageOrder", (prev: string[]) => [...prev, input.id])
+    }
+
+    const order = (state as any).messageOrder as string[] | undefined
+    if (order && order.length > MAX_MESSAGES_PER_INSTANCE) {
+      const toRemove: string[] = []
+      while (order.length - toRemove.length > MAX_MESSAGES_PER_INSTANCE) {
+        const oldestId = order[toRemove.length]
+        toRemove.push(oldestId)
+      }
       if (toRemove.length > 0) {
         setState("messages", (prev) => {
           const next = { ...prev }
@@ -606,6 +623,8 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
           }
           return next
         })
+        const remaining = order.slice(toRemove.length)
+        setState("messageOrder", () => remaining)
         for (const id of toRemove) {
           messageInfoCache.delete(id)
         }
@@ -898,6 +917,14 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
       return next
     })
 
+    setState("messageOrder", (prev: string[]) => {
+      const idx = prev.indexOf(options.oldId)
+      if (idx === -1) return prev
+      const next = [...prev]
+      next[idx] = options.newId
+      return next
+    })
+
     const affectedSessions = new Set<string>()
 
     Object.values(state.sessions).forEach((session) => {
@@ -963,14 +990,20 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
 
   function setMessageInfo(messageId: string, info: MessageInfo) {
     if (!messageId) return
-    if (messageInfoCache.size > MAX_MESSAGES_PER_INSTANCE) {
-      const entries = Array.from(messageInfoCache.entries())
-      const toDelete = entries.slice(0, Math.floor(entries.length / 2))
-      for (const [key] of toDelete) {
+    messageInfoCache.set(messageId, info)
+    messageInfoCacheCounter++
+
+    if (messageInfoCacheCounter >= 100 && messageInfoCache.size > MAX_MESSAGES_PER_INSTANCE) {
+      messageInfoCacheCounter = 0
+      let deleted = 0
+      const target = Math.floor(messageInfoCache.size / 2)
+      for (const key of messageInfoCache.keys()) {
+        if (deleted >= target) break
         messageInfoCache.delete(key)
+        deleted++
       }
     }
-    messageInfoCache.set(messageId, info)
+
     const nextVersion = (state.messageInfoVersion[messageId] ?? 0) + 1
     setState("messageInfoVersion", messageId, nextVersion)
     updateUsageWithInfo(info)
@@ -1114,6 +1147,8 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
 
     removedIds.forEach((id) => messageInfoCache.delete(id))
 
+    setState("messageOrder", (prev: string[]) => prev.filter((id) => !removedIds.includes(id)))
+
     setState("pendingParts", (prev) => {
       const next = { ...prev }
       removedIds.forEach((id) => {
@@ -1256,13 +1291,15 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
         return { ...current, messageIds: [] }
       })
 
-      setState("sessions", (prev) => {
-        const next = { ...prev }
-        delete next[sessionId]
-        return next
-      })
+       setState("sessions", (prev) => {
+         const next = { ...prev }
+         delete next[sessionId]
+         return next
+       })
 
       setState("sessionOrder", (ids) => ids.filter((id) => id !== sessionId))
+
+      setState("messageOrder", (prev: string[]) => prev.filter((id) => !messageIds.includes(id)))
     })
 
     clearLatestTodoSnapshot(sessionId)
@@ -1281,8 +1318,9 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
      clearRecordDisplayCacheForMessages(instanceId, allMessageIds)
 
      batch(() => {
-       setState("messages", {})
-       setState("messageInfoVersion", {})
+        setState("messages", {})
+        setState("messageOrder", [])
+        setState("messageInfoVersion", {})
        setState("pendingParts", {})
        setState("permissions", "byMessage", {})
        setState("questions", "byMessage", {})

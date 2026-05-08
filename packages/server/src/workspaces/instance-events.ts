@@ -5,6 +5,19 @@ import { Logger } from "../logger"
 import { WorkspaceManager } from "./manager"
 import { InstanceStreamEvent, InstanceStreamStatus } from "../api-types"
 
+const BUSY_EVENTS = new Set([
+  "message.updated",
+  "message.part.updated",
+  "message.part.delta",
+  "session.compacted",
+  "permission.asked",
+  "question.asked",
+])
+
+const IDLE_EVENTS = new Set([
+  "session.idle",
+])
+
 const INSTANCE_HOST = "127.0.0.1"
 const STREAM_AGENT = new UndiciAgent({ bodyTimeout: 0, headersTimeout: 0 })
 const RECONNECT_DELAY_MS = 1000
@@ -220,19 +233,6 @@ export class InstanceEventBridge {
   }
 
   private trackSessionState(workspaceId: string, event: { type: string; properties?: Record<string, unknown> }): void {
-    const BUSY_EVENTS = new Set([
-      "message.updated",
-      "message.part.updated",
-      "message.part.delta",
-      "session.compacted",
-      "permission.asked",
-      "question.asked",
-    ])
-
-    const IDLE_EVENTS = new Set([
-      "session.idle",
-    ])
-
     const eventType = event.type
 
     if (IDLE_EVENTS.has(eventType)) {
