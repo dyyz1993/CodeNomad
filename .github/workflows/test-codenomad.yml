@@ -31,7 +31,7 @@ jobs:
 
       - name: Start with fixed port
         run: |
-          codenomad --launch false --password testpass123 --host 127.0.0.1 --port 19899 --http true > /tmp/codenomad-fixed.log 2>&1 &
+          codenomad --password testpass123 --host 127.0.0.1 --http-port 19899 --http true --unrestricted-root > /tmp/codenomad-fixed.log 2>&1 &
           echo "CODENOMAD_PID=$!" >> $GITHUB_ENV
           sleep 15
 
@@ -139,7 +139,7 @@ jobs:
 
       - name: Start codenomad without port (should fallback)
         run: |
-          codenomad --launch false --password testpass123 --host 127.0.0.1 --http true > /tmp/codenomad-fallback.log 2>&1 &
+          codenomad --password testpass123 --host 127.0.0.1 --http true --unrestricted-root > /tmp/codenomad-fallback.log 2>&1 &
           echo "CODENOMAD_PID=$!" >> $GITHUB_ENV
           sleep 15
 
@@ -155,7 +155,11 @@ jobs:
           ACTUAL_PORT=$(echo "$ACTUAL_URL" | grep -oP ':\K\d+' | head -1)
 
           if [ -z "$ACTUAL_PORT" ]; then
-            ACTUAL_PORT=$(lsof -i -P -n 2>/dev/null | grep "$CODENOMAD_PID" | grep LISTEN | head -1 | grep -oP ':\K\d+' | head -1)
+            ACTUAL_PORT=$(ss -tlnp 2>/dev/null | grep "pid=$CODENOMAD_PID" | head -1 | grep -oP ':\K\d+' | head -1)
+          fi
+
+          if [ -z "$ACTUAL_PORT" ]; then
+            ACTUAL_PORT=$(ss -tlnp 2>/dev/null | grep -v '9899' | grep 'LISTEN' | tail -1 | grep -oP ':\K\d+' | head -1)
           fi
 
           if [ -z "$ACTUAL_PORT" ]; then
@@ -260,7 +264,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
+      - run: npm install
       - run: cd packages/ui && npm run build
       - run: cd packages/server && npm run build:server-only 2>/dev/null || npx tsc -p tsconfig.json
       - run: npm run typecheck
