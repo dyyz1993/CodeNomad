@@ -26,7 +26,7 @@ jobs:
       - name: Install codenomad
         run: |
           for i in 1 2 3; do
-            npm install -g @dyyz1993/codenomad@0.15.0 && break || sleep 10
+            npm install -g @dyyz1993/codenomad@0.15.1 && break || sleep 10
           done
 
       - name: Start with fixed port
@@ -69,7 +69,7 @@ jobs:
 
           LOGIN_RESPONSE=$(curl -sv -c /tmp/cookies.txt -X POST http://127.0.0.1:19899/api/auth/login \
             -H "Content-Type: application/json" \
-            -d '{"username":"admin","password":"testpass123"}' 2>&1)
+            -d '{"username":"codenomad","password":"testpass123"}' 2>&1)
           LOGIN_STATUS=$(echo "$LOGIN_RESPONSE" | grep "< HTTP" | tail -1 | awk '{print $3}')
           LOGIN_BODY=$(echo "$LOGIN_RESPONSE" | grep -v "^[<>*{]" | tail -1)
 
@@ -93,6 +93,14 @@ jobs:
             echo "login_result=unknown" >> $GITHUB_OUTPUT
             echo "⚠️ **Login result unclear** - HTTP $LOGIN_STATUS, body: \`$LOGIN_BODY\`" >> $GITHUB_STEP_SUMMARY
           fi
+
+      - name: Test browse filesystem after login
+        run: |
+          BROWSE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -b /tmp/cookies.txt "http://127.0.0.1:19899/api/filesystem/browse?path=/tmp")
+          echo "| GET /api/filesystem/browse?path=/tmp | $BROWSE_STATUS |" >> $GITHUB_STEP_SUMMARY
+
+          ROOT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -b /tmp/cookies.txt "http://127.0.0.1:19899/api/filesystem/browse")
+          echo "| GET /api/filesystem/browse (root) | $ROOT_STATUS |" >> $GITHUB_STEP_SUMMARY
 
       - name: Collect server logs
         if: always()
@@ -118,7 +126,7 @@ jobs:
       - name: Install codenomad
         run: |
           for i in 1 2 3; do
-            npm install -g @dyyz1993/codenomad@0.15.0 && break || sleep 10
+            npm install -g @dyyz1993/codenomad@0.15.1 && break || sleep 10
           done
 
       - name: Occupy default port 9899
@@ -213,7 +221,7 @@ jobs:
 
           LOGIN_RESPONSE=$(curl -sv -c /tmp/cookies-fallback.txt -X POST "$BASE/api/auth/login" \
             -H "Content-Type: application/json" \
-            -d '{"username":"admin","password":"testpass123"}' 2>&1)
+            -d '{"username":"codenomad","password":"testpass123"}' 2>&1)
           LOGIN_STATUS=$(echo "$LOGIN_RESPONSE" | grep "< HTTP" | tail -1 | awk '{print $3}')
           LOGIN_BODY=$(echo "$LOGIN_RESPONSE" | sed -n '/^{/,/^}/p' | tail -1)
 
