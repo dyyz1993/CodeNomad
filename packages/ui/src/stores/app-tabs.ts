@@ -6,6 +6,9 @@ import { serverApi } from "../lib/api-client"
 import { showToastNotification } from "../lib/notifications"
 import { fetchSessions } from "./session-api"
 
+const lastFetchSessionsTime = new Map<string, number>()
+const FETCH_SESSIONS_DEBOUNCE_MS = 3000
+
 export interface InstanceAppTab {
   id: string
   kind: "instance"
@@ -108,7 +111,11 @@ function selectAppTab(tabId: string | null) {
         })
       })
     } else {
-      fetchSessions(tab.instance.id).catch(() => {})
+      const lastTime = lastFetchSessionsTime.get(tab.instance.id) ?? 0
+      if (Date.now() - lastTime > FETCH_SESSIONS_DEBOUNCE_MS) {
+        lastFetchSessionsTime.set(tab.instance.id, Date.now())
+        fetchSessions(tab.instance.id).catch(() => {})
+      }
     }
     return
   }

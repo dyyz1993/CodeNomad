@@ -158,6 +158,9 @@ class SSEManager {
       case "session.diff":
         this.onSessionDiff?.(instanceId, event as EventSessionDiff)
         break
+      case "session.deleted":
+        this.onSessionDeleted?.(instanceId, event as { type: string; properties?: { sessionID?: string } })
+        break
       case "permission.updated":
       case "permission.asked":
         this.onPermissionUpdated?.(instanceId, event as any)
@@ -209,6 +212,7 @@ class SSEManager {
   onSessionIdle?: (instanceId: string, event: EventSessionIdle) => void
   onSessionStatus?: (instanceId: string, event: EventSessionStatus) => void
   onSessionDiff?: (instanceId: string, event: EventSessionDiff) => void
+  onSessionDeleted?: (instanceId: string, event: { type: string; properties?: { sessionID?: string } }) => void
   onPermissionUpdated?: (instanceId: string, event: any) => void
   onPermissionReplied?: (instanceId: string, event: any) => void
   onQuestionAsked?: (instanceId: string, event: any) => void

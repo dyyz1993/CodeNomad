@@ -1,6 +1,9 @@
 import type { SessionInfo } from "./session-state"
 
 import { sseManager } from "../lib/sse-manager"
+import { getLogger } from "../lib/logger"
+
+const log = getLogger("session")
 import { serverEvents } from "../lib/server-events"
 import { instances } from "./instances"
 
@@ -69,6 +72,7 @@ import {
   handleQuestionAnswered,
   handleQuestionAsked,
   handleSessionCompacted,
+  handleSessionDeleted,
   handleSessionDiff,
   handleSessionError,
   handleSessionIdle,
@@ -93,11 +97,15 @@ sseManager.onPermissionUpdated = handlePermissionUpdated
 sseManager.onPermissionReplied = handlePermissionReplied
 sseManager.onQuestionAsked = handleQuestionAsked
 sseManager.onQuestionAnswered = handleQuestionAnswered
+sseManager.onSessionDeleted = handleSessionDeleted
 
 serverEvents.onOpen(() => {
   const activeInstances = instances()
-  for (const [instanceId] of activeInstances) {
-    fetchSessions(instanceId).catch(() => {})
+  for (const [instanceId, instance] of activeInstances) {
+    if (instance.status === "suspended") continue
+    fetchSessions(instanceId).catch((err) => {
+      log.warn("Failed to refresh sessions on SSE reconnect", { instanceId, error: String(err) })
+    })
   }
 })
 

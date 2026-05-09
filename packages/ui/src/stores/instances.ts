@@ -123,6 +123,7 @@ const MAX_LOG_ENTRIES = 1000
 
 const pendingDisposeRequests = new Map<string, Promise<boolean>>()
 const pendingRehydrations = new Map<string, Promise<void>>()
+const pendingHydrations = new Map<string, Promise<void>>()
 
 function workspaceDescriptorToInstance(descriptor: WorkspaceDescriptor): Instance {
   const existing = instances().get(descriptor.id)
@@ -280,26 +281,36 @@ async function syncPendingQuestions(instanceId: string): Promise<void> {
 }
 
 async function hydrateInstanceData(instanceId: string, options?: { force?: boolean }) {
-  try {
-    if (options?.force) {
-      await reloadWorktrees(instanceId)
-      await reloadWorktreeMap(instanceId)
-    } else {
-      await ensureWorktreesLoaded(instanceId)
-      await ensureWorktreeMapLoaded(instanceId)
+  const existing = pendingHydrations.get(instanceId)
+  if (existing) return existing
+
+  const promise = (async () => {
+    try {
+      if (options?.force) {
+        await reloadWorktrees(instanceId)
+        await reloadWorktreeMap(instanceId)
+      } else {
+        await ensureWorktreesLoaded(instanceId)
+        await ensureWorktreeMapLoaded(instanceId)
+      }
+      await fetchSessions(instanceId)
+      await fetchAgents(instanceId)
+      await fetchProviders(instanceId)
+      await ensureInstanceConfigLoaded(instanceId)
+      const instance = instances().get(instanceId)
+      if (!instance?.client) return
+      await fetchCommands(instanceId, instance.client)
+      await syncPendingPermissions(instanceId)
+      await syncPendingQuestions(instanceId)
+    } catch (error) {
+      log.error("Failed to fetch initial data", error)
+    } finally {
+      pendingHydrations.delete(instanceId)
     }
-    await fetchSessions(instanceId)
-    await fetchAgents(instanceId)
-    await fetchProviders(instanceId)
-    await ensureInstanceConfigLoaded(instanceId)
-    const instance = instances().get(instanceId)
-    if (!instance?.client) return
-    await fetchCommands(instanceId, instance.client)
-    await syncPendingPermissions(instanceId)
-    await syncPendingQuestions(instanceId)
-  } catch (error) {
-    log.error("Failed to fetch initial data", error)
-  }
+  })()
+
+  pendingHydrations.set(instanceId, promise)
+  return promise
 }
 
 async function postInstanceDispose(instanceId: string): Promise<boolean> {
@@ -433,6 +444,7 @@ function handleWorkspaceEvent(event: WorkspaceEventPayload) {
         attachClient(event.workspace)
         void hydrateInstanceData(resumedId).catch((error) => {
           log.error("Failed to hydrate resumed workspace", error)
+          updateInstance(resumedId, { status: "error" })
         })
       }
       break

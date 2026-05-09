@@ -59,7 +59,7 @@ export class InstanceEventBridge {
 
   private startStream(workspaceId: string) {
     if (this.streams.has(workspaceId)) {
-      return
+      this.stopStream(workspaceId, "replaced by new stream")
     }
 
     const controller = new AbortController()

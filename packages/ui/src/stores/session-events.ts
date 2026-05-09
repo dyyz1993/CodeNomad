@@ -17,6 +17,7 @@ import type {
 import type { MessageStatus } from "./message-v2/types"
 
 import { getLogger } from "../lib/logger"
+import { batch } from "solid-js"
 import { requestData } from "../lib/opencode-api"
 import {
   getPermissionId,
@@ -318,6 +319,7 @@ function findPendingSyntheticMessageId(
 }
 
 function handleMessageUpdate(instanceId: string, event: MessageUpdateEvent | MessagePartUpdatedEvent): void {
+  batch(() => {
   const instanceSessions = sessions().get(instanceId)
 
   if (event.type === "message.part.updated") {
@@ -371,7 +373,6 @@ function handleMessageUpdate(instanceId: string, event: MessageUpdateEvent | Mes
     handleConversationAssistantPartUpdated(instanceId, { ...part, sessionID: sessionId, messageID: messageId }, messageInfo)
 
     if (part.type === "tool" && part.tool === "question") {
-      // Questions can arrive before their tool part exists; re-link now.
       reconcilePendingQuestionsV2(instanceId, sessionId)
     }
 
@@ -433,6 +434,7 @@ function handleMessageUpdate(instanceId: string, event: MessageUpdateEvent | Mes
 
     updateSessionInfo(instanceId, sessionId)
   }
+  })
 }
 
 function handleMessagePartDelta(instanceId: string, event: MessagePartDeltaEvent): void {
@@ -443,7 +445,32 @@ function handleMessagePartDelta(instanceId: string, event: MessagePartDeltaEvent
   applyPartDeltaV2(instanceId, { messageId: messageID, partId: partID, field, delta })
 }
 
+function handleSessionDeleted(instanceId: string, event: { type: string; properties?: { sessionID?: string } }): void {
+  const sessionId = event.properties?.sessionID
+  if (!sessionId) return
+
+  log.info(`[SSE] Session deleted: ${sessionId}`)
+
+  const store = messageStoreBus.getInstance(instanceId)
+  if (store) {
+    store.clearSession(sessionId)
+  }
+
+  setSessions((prev) => {
+    const instanceSessions = prev.get(instanceId)
+    if (!instanceSessions?.has(sessionId)) return prev
+    const nextInstanceSessions = new Map(instanceSessions)
+    nextInstanceSessions.delete(sessionId)
+    const next = new Map(prev)
+    next.set(instanceId, nextInstanceSessions)
+    return next
+  })
+
+  syncInstanceSessionIndicator(instanceId)
+}
+
 function handleSessionUpdate(instanceId: string, event: EventSessionUpdated): void {
+  batch(() => {
   const info = event.properties?.info
 
   if (!info) return
@@ -525,6 +552,7 @@ function handleSessionUpdate(instanceId: string, event: EventSessionUpdated): vo
     syncInstanceSessionIndicator(instanceId, updatedInstanceSessions)
     setSessionRevertV2(instanceId, info.id, info.revert ?? null)
   }
+  })
 }
 
 function handleSessionDiff(instanceId: string, event: EventSessionDiff): void {
@@ -755,6 +783,7 @@ export {
   handleQuestionAsked,
   handleQuestionAnswered,
   handleSessionCompacted,
+  handleSessionDeleted,
   handleSessionDiff,
   handleSessionError,
   handleSessionIdle,
