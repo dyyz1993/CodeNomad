@@ -1,6 +1,6 @@
 {
   "name": "codenomad-workspace",
-  "version": "0.15.21",
+  "version": "0.15.22",
   "private": true,
   "description": "CodeNomad monorepo workspace",
   "license": "MIT",

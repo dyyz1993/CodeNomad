@@ -106,6 +106,62 @@ jobs:
           ROOT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -b /tmp/cookies.txt "http://127.0.0.1:19899/api/filesystem/browse")
           echo "| GET /api/filesystem/browse (root) | $ROOT_STATUS |" >> $GITHUB_STEP_SUMMARY
 
+      - name: Test auth lifecycle
+        run: |
+          echo "### Auth Lifecycle Tests" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          # Test logout
+          LOGOUT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -b /tmp/cookies.txt -X POST http://127.0.0.1:19899/api/auth/logout)
+          echo "| POST /api/auth/logout | $LOGOUT_STATUS | $( [ "$LOGOUT_STATUS" = "200" ] && echo '✅ Logout OK' || echo '❌ Expected 200' ) |" >> $GITHUB_STEP_SUMMARY
+
+          # Test unauthenticated access after logout
+          UNAUTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -b /tmp/cookies.txt http://127.0.0.1:19899/api/auth/status)
+          UNAUTH_BODY=$(curl -s -b /tmp/cookies.txt http://127.0.0.1:19899/api/auth/status 2>/dev/null || echo "failed")
+          echo "| GET /api/auth/status (after logout) | $UNAUTH_STATUS | Body: \`$(echo $UNAUTH_BODY | head -c 200)\` |" >> $GITHUB_STEP_SUMMARY
+
+          # Re-login for subsequent tests
+          curl -sv -c /tmp/cookies.txt -X POST http://127.0.0.1:19899/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"username":"codenomad","password":"testpass123"}' 2>&1 > /dev/null
+
+          # Test meta endpoint
+          META_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -b /tmp/cookies.txt http://127.0.0.1:19899/api/meta)
+          echo "| GET /api/meta | $META_STATUS | $( [ "$META_STATUS" = "200" ] && echo '✅ Meta OK' || echo '❌ Expected 200' ) |" >> $GITHUB_STEP_SUMMARY
+
+          # Test settings endpoint
+          SETTINGS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -b /tmp/cookies.txt http://127.0.0.1:19899/api/storage/config)
+          echo "| GET /api/storage/config | $SETTINGS_STATUS | $( [ "$SETTINGS_STATUS" = "200" ] && echo '✅ Settings OK' || echo '❌ Expected 200' ) |" >> $GITHUB_STEP_SUMMARY
+
+          # Test SSE events endpoint
+          SSE_PID=$(timeout 3 curl -s -N -b /tmp/cookies.txt http://127.0.0.1:19899/api/events 2>/dev/null | head -c 100 &)
+          sleep 1
+          echo "| GET /api/events (SSE) | - | ✅ SSE connection attempted |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Test workspace APIs
+        run: |
+          echo "### Workspace API Tests" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          # List workspaces (should be empty or return array)
+          WS_LIST_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -b /tmp/cookies.txt http://127.0.0.1:19899/api/workspaces)
+          WS_LIST_BODY=$(curl -s -b /tmp/cookies.txt http://127.0.0.1:19899/api/workspaces 2>/dev/null || echo "failed")
+          echo "| GET /api/workspaces | $WS_LIST_STATUS | Body: \`$(echo $WS_LIST_BODY | head -c 300)\` |" >> $GITHUB_STEP_SUMMARY
+
+          # Test filesystem browse
+          FS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -b /tmp/cookies.txt "http://127.0.0.1:19899/api/filesystem?path=/tmp")
+          echo "| GET /api/filesystem?path=/tmp | $FS_STATUS | $( [ "$FS_STATUS" = "200" ] && echo '✅ Filesystem OK' || echo '❌ Expected 200' ) |" >> $GITHUB_STEP_SUMMARY
+
+          # Test storage instances
+          STORAGE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -b /tmp/cookies.txt http://127.0.0.1:19899/api/storage/instances/test-id 2>/dev/null || echo "404")
+          echo "| GET /api/storage/instances/:id | $STORAGE_STATUS | Storage endpoint checked |" >> $GITHUB_STEP_SUMMARY
+
+          # Test sidecars
+          SIDECAR_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -b /tmp/cookies.txt http://127.0.0.1:19899/api/sidecars 2>/dev/null || echo "000")
+          echo "| GET /api/sidecars | $SIDECAR_STATUS | Sidecar endpoint checked |" >> $GITHUB_STEP_SUMMARY
+
       - name: Collect server logs
         if: always()
         run: |
