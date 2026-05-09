@@ -237,7 +237,7 @@ export default function ModelSelector(props: ModelSelectorProps) {
     suppressNextClose = true
     setTimeout(() => {
       suppressNextClose = false
-    }, 0)
+    }, 50)
   }
 
   const toggleFavoritesOnly = () => {
@@ -280,6 +280,8 @@ export default function ModelSelector(props: ModelSelectorProps) {
         placeholder={t("modelSelector.placeholder.search")}
         defaultFilter={customFilter}
         allowsEmptyCollection
+        fitViewport
+        flip
         itemComponent={(itemProps) => {
           if (isProviderHeaderOption(itemProps.item.rawValue)) {
             const header = itemProps.item.rawValue
@@ -332,7 +334,7 @@ export default function ModelSelector(props: ModelSelectorProps) {
                     suppressNextClose = true
                     setTimeout(() => {
                       suppressNextClose = false
-                    }, 0)
+                    }, 50)
                   }}
                   onClick={(event) => {
                     event.preventDefault()

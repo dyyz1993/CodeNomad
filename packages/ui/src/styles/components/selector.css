@@ -63,10 +63,12 @@
 }
 
 .selector-popover {
-  @apply rounded-md shadow-lg overflow-hidden min-w-[300px];
+  @apply rounded-md shadow-lg overflow-hidden;
   background-color: var(--surface-base);
   border: 1px solid var(--border-base);
   z-index: 2200;
+  touch-action: manipulation;
+  min-width: min(300px, calc(100vw - 32px));
 }
 
 .selector-search-container {
@@ -333,4 +335,15 @@
 .selector-loading-spinner {
   @apply w-4 h-4 animate-spin;
   color: var(--accent-primary);
+}
+
+@media (max-width: 640px) {
+  .selector-popover {
+    min-width: 0;
+    max-width: calc(100vw - 16px);
+  }
+
+  .selector-listbox {
+    max-height: 50vh;
+  }
 }
