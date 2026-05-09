@@ -391,13 +391,6 @@ async function disposeInstance(instanceId: string): Promise<boolean> {
     const workspaces = await serverApi.fetchWorkspaces()
     workspaces.forEach((workspace) => {
       upsertWorkspace(workspace)
-      if (workspace.status === "suspended") {
-        serverApi.resumeWorkspace(workspace.id).then((resumed) => {
-          upsertWorkspace(resumed)
-        }).catch(() => {
-          // resume failed, keep suspended
-        })
-      }
     })
     ensureActiveInstanceSelected()
   } catch (error) {

@@ -2,6 +2,7 @@ import { createMemo, createSignal } from "solid-js"
 import type { Instance } from "../types/instance"
 import { activeInstanceId, instances, setActiveInstanceId } from "./instances"
 import { activeSidecarToken, setActiveSidecarToken, sidecarTabs, type SideCarTabRecord } from "./sidecars"
+import { serverApi } from "../lib/api-client"
 
 export interface InstanceAppTab {
   id: string
@@ -97,6 +98,9 @@ function selectAppTab(tabId: string | null) {
   if (tab.kind === "instance") {
     setActiveSidecarToken(null)
     setActiveInstanceId(tab.instance.id)
+    if (tab.instance.status === "suspended") {
+      serverApi.resumeWorkspace(tab.instance.id).catch(() => {})
+    }
     return
   }
 

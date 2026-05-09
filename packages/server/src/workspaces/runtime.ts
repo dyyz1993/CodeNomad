@@ -254,7 +254,11 @@ export class WorkspaceRuntime {
             recentStderr.shift()
           }
 
-          this.emitLog(options.workspaceId, "error", line)
+          if (/ERROR\s+service=server\s/.test(trimmed) && /failed/.test(trimmed) && !/error=.{10,}/.test(trimmed)) {
+            this.emitLog(options.workspaceId, "warn", line)
+          } else {
+            this.emitLog(options.workspaceId, "error", line)
+          }
         }
       })
     })
