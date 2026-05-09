@@ -1,13 +1,100 @@
-import { Component, For, Show, createMemo } from "solid-js"
+import { Component, ParentComponent, For, Show, createMemo, onMount, onCleanup } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import {
   DragDropProvider,
-  DragDropSensors,
   SortableProvider,
   closestCenter,
   createSortable,
+  useDragDropContext,
   type DragEvent as SolidDndDragEvent,
+  type Id,
 } from "@thisbeyond/solid-dnd"
+
+const DRAG_ACTIVATION_DELAY = 500
+const DRAG_ACTIVATION_DISTANCE = 20
+
+function createDelayedPointerSensor(id: Id = "delayed-pointer-sensor") {
+  const context = useDragDropContext()
+  if (!context) return
+  const [state, actions] = context
+
+  onMount(() => {
+    actions.addSensor({ id, activators: { pointerdown: attach } })
+  })
+
+  onCleanup(() => {
+    actions.removeSensor(id)
+  })
+
+  const isActiveSensor = () => state.active.sensorId === id
+  const initialCoordinates = { x: 0, y: 0 }
+  let activationDelayTimeoutId: number | null = null
+  let activationDraggableId: Id | null = null
+
+  const attach = (event: PointerEvent, draggableId: Id) => {
+    if (event.button !== 0) return
+    document.addEventListener("pointermove", onPointerMove)
+    document.addEventListener("pointerup", onPointerUp)
+    activationDraggableId = draggableId
+    initialCoordinates.x = event.clientX
+    initialCoordinates.y = event.clientY
+    activationDelayTimeoutId = window.setTimeout(onActivate, DRAG_ACTIVATION_DELAY)
+  }
+
+  const detach = () => {
+    if (activationDelayTimeoutId) {
+      clearTimeout(activationDelayTimeoutId)
+      activationDelayTimeoutId = null
+    }
+    document.removeEventListener("pointermove", onPointerMove)
+    document.removeEventListener("pointerup", onPointerUp)
+    document.removeEventListener("selectionchange", clearSelection)
+  }
+
+  const onActivate = () => {
+    if (!state.active.sensor) {
+      actions.sensorStart(id, initialCoordinates)
+      actions.dragStart(activationDraggableId!)
+      clearSelection()
+      document.addEventListener("selectionchange", clearSelection)
+    } else if (!isActiveSensor()) {
+      detach()
+    }
+  }
+
+  const onPointerMove = (event: PointerEvent) => {
+    const coordinates = { x: event.clientX, y: event.clientY }
+    if (!state.active.sensor) {
+      const dx = coordinates.x - initialCoordinates.x
+      const dy = coordinates.y - initialCoordinates.y
+      if (Math.sqrt(dx * dx + dy * dy) > DRAG_ACTIVATION_DISTANCE) {
+        onActivate()
+      }
+    }
+    if (isActiveSensor()) {
+      event.preventDefault()
+      actions.sensorMove(coordinates)
+    }
+  }
+
+  const onPointerUp = (event: PointerEvent) => {
+    detach()
+    if (isActiveSensor()) {
+      event.preventDefault()
+      actions.dragEnd()
+      actions.sensorEnd()
+    }
+  }
+
+  const clearSelection = () => {
+    window.getSelection()?.removeAllRanges()
+  }
+}
+
+const DelayedDragDropSensors: ParentComponent = (props) => {
+  createDelayedPointerSensor()
+  return props.children
+}
 import InstanceTab from "./instance-tab"
 import KeyboardHint from "./keyboard-hint"
 import { Plus, MonitorUp, Bell, BellOff, Settings } from "lucide-solid"
@@ -124,7 +211,7 @@ const InstanceTabs: Component<InstanceTabsProps> = (props) => {
           <div class="tab-strip">
             <div class="tab-strip-tabs">
               <DragDropProvider collisionDetector={closestCenter} onDragEnd={handleDragEnd}>
-                <DragDropSensors>
+                <DelayedDragDropSensors>
                   <SortableProvider ids={tabIds()}>
                     <For each={props.tabs}>
                       {(tab) => (
@@ -137,7 +224,7 @@ const InstanceTabs: Component<InstanceTabsProps> = (props) => {
                       )}
                     </For>
                   </SortableProvider>
-                </DragDropSensors>
+                </DelayedDragDropSensors>
               </DragDropProvider>
               <button
                 class="new-tab-button"
