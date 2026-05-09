@@ -79,8 +79,8 @@ export class SessionManager {
     try {
       await mkdir(path.dirname(this.stateFilePath), { recursive: true })
       await writeFile(this.stateFilePath, JSON.stringify(data, null, 2), "utf-8")
-    } catch {
-      // silently fail
+    } catch (error) {
+      console.error("Failed to save session state", error)
     }
   }
 
@@ -100,8 +100,8 @@ export class SessionManager {
           createdAt: entry.createdAt,
         })
       }
-    } catch {
-      // silently fail
+    } catch (error) {
+      console.error("Failed to load session state", error)
     }
   }
 

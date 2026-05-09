@@ -540,17 +540,17 @@ async function main() {
     serverMeta.addresses = []
   }
 
-  console.log(`Local Connection URL : ${serverMeta.localUrl}`)
+  logger.info(`Local Connection URL : ${serverMeta.localUrl}`)
   if (serverMeta.remoteUrl) {
-    console.log(`Remote Connection URL : ${serverMeta.remoteUrl}`)
+    logger.info(`Remote Connection URL : ${serverMeta.remoteUrl}`)
     const additionalRemoteUrls = serverMeta.addresses
       .map((addr) => addr.remoteUrl)
       .filter((url) => url !== serverMeta.remoteUrl)
 
     if (additionalRemoteUrls.length > 0) {
-      console.log("Other Accessible URLs:")
+      logger.info("Other Accessible URLs:")
       for (const url of additionalRemoteUrls) {
-        console.log(`  - ${url}`)
+        logger.info(`  - ${url}`)
       }
     }
   }

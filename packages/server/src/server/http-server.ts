@@ -184,6 +184,21 @@ export function createHttpServer(deps: HttpServerDeps) {
     },
   })
 
+  app.setErrorHandler((error, request, reply) => {
+    const statusCode = error.statusCode || 500
+    const message = statusCode === 500 ? "Internal Server Error" : error.message
+
+    deps.logger.error(
+      { error: error.message, url: request.url, method: request.method, statusCode },
+      "Unhandled request error",
+    )
+
+    reply.status(statusCode).send({
+      error: message,
+      statusCode,
+    })
+  })
+
   const backgroundProcessManager = new BackgroundProcessManager({
     workspaceManager: deps.workspaceManager,
     eventBus: deps.eventBus,
@@ -300,6 +315,10 @@ export function createHttpServer(deps: HttpServerDeps) {
   })
   registerBackgroundProcessRoutes(app, { backgroundProcessManager })
   registerInstanceProxyRoutes(app, { workspaceManager: deps.workspaceManager, logger: proxyLogger })
+
+  app.get("/api/health", async () => {
+    return { status: "ok", timestamp: new Date().toISOString() }
+  })
 
 
   if (deps.uiDevServerUrl) {
@@ -603,7 +622,7 @@ async function proxyWorkspaceRequest(args: {
 
   if (extracted.overrideDirectory) {
     try {
-      directory = validateAndNormalizeOverrideDirectory({
+      directory = await validateAndNormalizeOverrideDirectory({
         overrideDirectory: extracted.overrideDirectory,
         workspaceRoot: workspace.path,
       })
@@ -736,7 +755,7 @@ function decodeBase64Url(input: string): string {
   return Buffer.from(base64, "base64").toString("utf-8")
 }
 
-function validateAndNormalizeOverrideDirectory(params: { overrideDirectory: string; workspaceRoot: string }): string {
+async function validateAndNormalizeOverrideDirectory(params: { overrideDirectory: string; workspaceRoot: string }): Promise<string> {
   const raw = params.overrideDirectory.trim()
   if (!raw) {
     throw new Error("Override directory is empty")
@@ -746,17 +765,19 @@ function validateAndNormalizeOverrideDirectory(params: { overrideDirectory: stri
     throw new Error("Override directory must be an absolute path")
   }
 
-  if (!fs.existsSync(raw)) {
+  try {
+    await fs.promises.access(raw)
+  } catch {
     throw new Error(`Override directory does not exist: ${raw}`)
   }
 
-  const stats = fs.statSync(raw)
+  const stats = await fs.promises.stat(raw)
   if (!stats.isDirectory()) {
     throw new Error(`Override path is not a directory: ${raw}`)
   }
 
-  const normalizedOverride = fs.realpathSync(raw)
-  const normalizedRoot = fs.realpathSync(params.workspaceRoot)
+  const normalizedOverride = await fs.promises.realpath(raw)
+  const normalizedRoot = await fs.promises.realpath(params.workspaceRoot)
 
   if (!isSubpath(normalizedOverride, normalizedRoot)) {
     throw new Error("Override directory must be within the workspace root")
