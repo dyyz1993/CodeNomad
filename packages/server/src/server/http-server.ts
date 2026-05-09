@@ -633,6 +633,7 @@ async function proxyWorkspaceRequest(args: {
   const instanceAuthHeader = workspaceManager.getInstanceAuthorizationHeader(workspaceId)
 
   logger.debug({ workspaceId, method: request.method, targetUrl }, "Proxying request to instance")
+  workspaceManager.recordActivity(workspaceId)
   if (logger.isLevelEnabled("trace")) {
     logger.trace({ workspaceId, targetUrl, body: request.body }, "Instance proxy payload")
   }

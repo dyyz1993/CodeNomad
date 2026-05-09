@@ -429,6 +429,10 @@ function handleWorkspaceEvent(event: WorkspaceEventPayload) {
       const resumedId = event.workspace?.id
       if (resumedId) {
         upsertWorkspace(event.workspace)
+        attachClient(event.workspace)
+        void hydrateInstanceData(resumedId).catch((error) => {
+          log.error("Failed to hydrate resumed workspace", error)
+        })
       }
       break
     }
@@ -1199,4 +1203,6 @@ export {
   acknowledgeDisconnectedInstance,
   fetchLspStatus,
   disposeInstance,
+  attachClient,
+  hydrateInstanceData,
 }

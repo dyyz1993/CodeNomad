@@ -1,6 +1,6 @@
 {
   "name": "@codenomad/tauri-app",
-  "version": "0.15.16",
+  "version": "0.15.17",
   "private": true,
   "license": "MIT",
   "scripts": {

@@ -2,7 +2,7 @@ import { getIdleSinceForStatusTransition, mapSdkSessionRetry, mapSdkSessionStatu
 import type { Message } from "../types/message"
 import type { FileDiff } from "@opencode-ai/sdk/v2/client"
 
-import { instances } from "./instances"
+import { instances, attachClient, hydrateInstanceData } from "./instances"
 import { preferences, setAgentModelPreference } from "./preferences"
 import {
   activeSessionId,
@@ -617,8 +617,26 @@ async function loadMessages(instanceId: string, sessionId: string, force = false
   }
 
   const instance = instances().get(instanceId)
-  if (!instance || !instance.client) {
+  if (!instance) {
     throw new Error("Instance not ready")
+  }
+
+  if (!instance.client) {
+    try {
+      const descriptor = {
+        id: instance.id,
+        proxyPath: instance.proxyPath,
+        port: instance.port,
+      } as import("../../../server/src/api-types").WorkspaceDescriptor
+      attachClient(descriptor)
+      await hydrateInstanceData(instanceId)
+    } catch {
+      throw new Error("Instance not ready")
+    }
+    const newInstance = instances().get(instanceId)
+    if (!newInstance?.client) {
+      throw new Error("Instance not ready")
+    }
   }
 
   const worktreeSlug = getWorktreeSlugForSession(instanceId, sessionId)

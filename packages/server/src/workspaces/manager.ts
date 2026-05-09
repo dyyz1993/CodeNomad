@@ -26,7 +26,7 @@ import {
 } from "./opencode-auth"
 
 const STARTUP_STABILITY_DELAY_MS = 300
-const IDLE_TIMEOUT_MS = 10 * 60 * 1000
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000
 const IDLE_CHECK_INTERVAL_MS = 60 * 1000
 const MAX_ACTIVE_WORKSPACES = 3
 
