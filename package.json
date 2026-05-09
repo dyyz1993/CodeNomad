@@ -1,6 +1,6 @@
 {
   "name": "codenomad-workspace",
-  "version": "0.15.20",
+  "version": "0.15.21",
   "private": true,
   "description": "CodeNomad monorepo workspace",
   "license": "MIT",
@@ -23,6 +23,7 @@
     "build:mac-x64": "npm run build:mac-x64 --workspace @dyyz1993/codenomad-electron-app",
     "build:binaries": "npm run build:binaries --workspace @dyyz1993/codenomad-electron-app",
     "typecheck": "npm run typecheck --workspace @codenomad/ui && npm run typecheck --workspace @dyyz1993/codenomad-electron-app",
+    "test": "npm run test --workspace @dyyz1993/codenomad && npm run test --workspace @codenomad/ui",
     "bumpVersion": "node ./scripts/bump-version.js"
   },
   "dependencies": {

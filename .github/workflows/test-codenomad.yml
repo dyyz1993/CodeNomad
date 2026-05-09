@@ -23,10 +23,14 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Get latest version
+        id: version
+        run: echo "version=$(npm view @dyyz1993/codenomad version)" >> $GITHUB_OUTPUT
+
       - name: Install codenomad
         run: |
           for i in 1 2 3; do
-            npm install -g @dyyz1993/codenomad@0.15.1 && break || sleep 10
+            npm install -g @dyyz1993/codenomad@${{ steps.version.outputs.version }} && break || sleep 10
           done
 
       - name: Start with fixed port
@@ -123,10 +127,14 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Get latest version
+        id: version
+        run: echo "version=$(npm view @dyyz1993/codenomad version)" >> $GITHUB_OUTPUT
+
       - name: Install codenomad
         run: |
           for i in 1 2 3; do
-            npm install -g @dyyz1993/codenomad@0.15.1 && break || sleep 10
+            npm install -g @dyyz1993/codenomad@${{ steps.version.outputs.version }} && break || sleep 10
           done
 
       - name: Occupy default port 9899
@@ -276,6 +284,12 @@ jobs:
       - run: cd packages/ui && npm run build
       - run: cd packages/server && npm run build:server-only 2>/dev/null || npx tsc -p tsconfig.json
       - run: npm run typecheck
+      - name: Run server unit tests
+        run: npx tsx --test 'src/**/*.test.ts'
+        working-directory: packages/server
+      - name: Run UI unit tests
+        run: npx tsx --test 'src/**/*.test.ts'
+        working-directory: packages/ui
 
   report:
     runs-on: ubuntu-latest

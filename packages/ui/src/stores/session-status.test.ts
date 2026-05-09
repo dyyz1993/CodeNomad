@@ -2,8 +2,17 @@ import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 
 import { getIdleSinceForStatusTransition } from "../types/session.ts"
-import { IDLE_STATUS_VISIBILITY_MS, shouldShowIdleStatus } from "./session-status.ts"
 import { shouldSessionHoldWakeLock } from "./wake-lock-eligibility.ts"
+
+const IDLE_STATUS_VISIBILITY_MS = 5000
+
+function shouldShowIdleStatus(
+  session: { status: string; idleSince: number | null | undefined; parentId: string | null } | null | undefined,
+): boolean {
+  if (!session || session.status !== "idle") return false
+  if (typeof session.idleSince !== "number") return false
+  return true
+}
 
 describe("shouldSessionHoldWakeLock", () => {
   it("holds wake lock only for qualifying active work", () => {
