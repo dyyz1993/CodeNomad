@@ -3,6 +3,7 @@ import type { Instance } from "../types/instance"
 import { activeInstanceId, instances, setActiveInstanceId } from "./instances"
 import { activeSidecarToken, setActiveSidecarToken, sidecarTabs, type SideCarTabRecord } from "./sidecars"
 import { serverApi } from "../lib/api-client"
+import { showToastNotification } from "../lib/notifications"
 import { fetchSessions } from "./session-api"
 
 export interface InstanceAppTab {
@@ -100,7 +101,12 @@ function selectAppTab(tabId: string | null) {
     setActiveSidecarToken(null)
     setActiveInstanceId(tab.instance.id)
     if (tab.instance.status === "suspended") {
-      serverApi.resumeWorkspace(tab.instance.id).catch(() => {})
+      serverApi.resumeWorkspace(tab.instance.id).catch((error) => {
+        showToastNotification({
+          message: error instanceof Error ? error.message : String(error),
+          variant: "error",
+        })
+      })
     } else {
       fetchSessions(tab.instance.id).catch(() => {})
     }

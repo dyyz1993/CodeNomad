@@ -109,9 +109,22 @@ interface SessionForkResponse {
 }
 
 async function fetchSessions(instanceId: string): Promise<void> {
-  const instance = instances().get(instanceId)
-  if (!instance || !instance.client) {
-    throw new Error("Instance not ready")
+  let instance = instances().get(instanceId)
+  if (!instance?.client) {
+    try {
+      const descriptor = {
+        id: instance!.id,
+        proxyPath: instance!.proxyPath,
+        port: instance!.port,
+      } as import("../../../server/src/api-types").WorkspaceDescriptor
+      attachClient(descriptor)
+      instance = instances().get(instanceId)
+      if (!instance?.client) {
+        throw new Error("Instance not ready")
+      }
+    } catch {
+      throw new Error("Instance not ready")
+    }
   }
 
   const rootClient = getRootClient(instanceId)
@@ -522,9 +535,22 @@ async function deleteSession(instanceId: string, sessionId: string): Promise<voi
 }
 
 async function fetchAgents(instanceId: string): Promise<void> {
-  const instance = instances().get(instanceId)
-  if (!instance || !instance.client) {
-    throw new Error("Instance not ready")
+  let instance = instances().get(instanceId)
+  if (!instance?.client) {
+    try {
+      const descriptor = {
+        id: instance!.id,
+        proxyPath: instance!.proxyPath,
+        port: instance!.port,
+      } as import("../../../server/src/api-types").WorkspaceDescriptor
+      attachClient(descriptor)
+      instance = instances().get(instanceId)
+      if (!instance?.client) {
+        throw new Error("Instance not ready")
+      }
+    } catch {
+      throw new Error("Instance not ready")
+    }
   }
 
   const rootClient = getRootClient(instanceId)
@@ -556,9 +582,22 @@ async function fetchAgents(instanceId: string): Promise<void> {
 }
 
 async function fetchProviders(instanceId: string): Promise<void> {
-  const instance = instances().get(instanceId)
-  if (!instance || !instance.client) {
-    throw new Error("Instance not ready")
+  let instance = instances().get(instanceId)
+  if (!instance?.client) {
+    try {
+      const descriptor = {
+        id: instance!.id,
+        proxyPath: instance!.proxyPath,
+        port: instance!.port,
+      } as import("../../../server/src/api-types").WorkspaceDescriptor
+      attachClient(descriptor)
+      instance = instances().get(instanceId)
+      if (!instance?.client) {
+        throw new Error("Instance not ready")
+      }
+    } catch {
+      throw new Error("Instance not ready")
+    }
   }
 
   const rootClient = getRootClient(instanceId)

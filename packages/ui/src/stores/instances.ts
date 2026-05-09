@@ -212,6 +212,7 @@ function releaseInstanceResources(instanceId: string) {
   if (instance.client) {
     sdkManager.destroyClientsForInstance(instanceId)
   }
+  updateInstance(instanceId, { client: null })
   sseManager.seedStatus(instanceId, "disconnected")
 }
 

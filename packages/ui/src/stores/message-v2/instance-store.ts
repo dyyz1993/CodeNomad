@@ -62,7 +62,8 @@ function ensurePartId(messageId: string, part: ClientPart, index: number): strin
   }
 
   if (part.type === "tool") {
-    throw new Error("Tool part missing id")
+    part.id = `tool-fallback-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    return part.id
   }
 
   const fallbackId = `${messageId}-part-${index}`

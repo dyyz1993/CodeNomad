@@ -32,7 +32,7 @@ export function normalizeMessagePart(part: any): any {
   }
 
   if (part.type === "tool" && (typeof part.id !== "string" || part.id.length === 0)) {
-    throw new Error("Tool part missing id")
+    part.id = `tool-fallback-${Date.now()}-${Math.random().toString(36).slice(2)}`
   }
 
   if (part.type !== "text") {
