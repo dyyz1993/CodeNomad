@@ -1,6 +1,8 @@
 import type { SessionInfo } from "./session-state"
 
 import { sseManager } from "../lib/sse-manager"
+import { serverEvents } from "../lib/server-events"
+import { instances } from "./instances"
 
 import {
   activeParentSessionId,
@@ -91,6 +93,13 @@ sseManager.onPermissionUpdated = handlePermissionUpdated
 sseManager.onPermissionReplied = handlePermissionReplied
 sseManager.onQuestionAsked = handleQuestionAsked
 sseManager.onQuestionAnswered = handleQuestionAnswered
+
+serverEvents.onOpen(() => {
+  const activeInstances = instances()
+  for (const [instanceId] of activeInstances) {
+    fetchSessions(instanceId).catch(() => {})
+  }
+})
 
 export {
   abortSession,

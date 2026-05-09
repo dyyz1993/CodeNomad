@@ -156,7 +156,7 @@ function applySessionStatus(instanceId: string, sessionId: string, status: Sessi
     const nextRetry = retry ?? null
     if (current === status && isSameRetryState(session.retry, nextRetry)) return false
 
-    if (current === "compacting" && status !== "compacting") {
+    if (current === "compacting" && status === "working") {
       return false
     }
 
@@ -227,11 +227,11 @@ async function fetchSessionInfo(instanceId: string, sessionId: string, directory
         ...fetched,
         agent: existing?.agent ?? fetched.agent,
         model: existing?.model ?? fetched.model,
-        status: existing?.status === "compacting" ? "compacting" : fetched.status,
-        retry: existing?.status === "compacting" ? null : fetched.retry,
+        status: fetched.status,
+        retry: fetched.retry,
         idleSince: getIdleSinceForStatusTransition(
           existing?.status,
-          existing?.status === "compacting" ? "compacting" : fetched.status,
+          fetched.status,
           existing?.idleSince,
         ),
         pendingPermission: existing?.pendingPermission ?? fetched.pendingPermission,

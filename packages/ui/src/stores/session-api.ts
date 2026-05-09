@@ -156,10 +156,7 @@ async function fetchSessions(instanceId: string): Promise<void> {
 
       let status: SessionStatus
       let retry = existingSession?.retry ?? null
-      if (existingStatus === "compacting") {
-        status = "compacting"
-        retry = null
-      } else {
+      {
         const rawStatus = (apiSession as any)?.status ?? statusById[apiSession.id]
         const hasType = rawStatus && typeof rawStatus === "object" && typeof rawStatus.type === "string"
         status = hasType ? mapSdkSessionStatus(rawStatus) : existingStatus ?? "idle"

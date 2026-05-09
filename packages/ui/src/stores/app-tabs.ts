@@ -3,6 +3,7 @@ import type { Instance } from "../types/instance"
 import { activeInstanceId, instances, setActiveInstanceId } from "./instances"
 import { activeSidecarToken, setActiveSidecarToken, sidecarTabs, type SideCarTabRecord } from "./sidecars"
 import { serverApi } from "../lib/api-client"
+import { fetchSessions } from "./session-api"
 
 export interface InstanceAppTab {
   id: string
@@ -100,6 +101,8 @@ function selectAppTab(tabId: string | null) {
     setActiveInstanceId(tab.instance.id)
     if (tab.instance.status === "suspended") {
       serverApi.resumeWorkspace(tab.instance.id).catch(() => {})
+    } else {
+      fetchSessions(tab.instance.id).catch(() => {})
     }
     return
   }
