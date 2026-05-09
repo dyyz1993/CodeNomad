@@ -71,6 +71,25 @@ export class SettingsService {
     this.stateStore = new YamlDocStore(location.stateYamlPath, logger.child({ component: "settings-state" }))
   }
 
+  getDocSync(kind: DocKind): SettingsDoc | undefined {
+    const store = kind === "config" ? this.configStore : this.stateStore
+    const data = store.getSync()
+    if (!data) return undefined
+    if (kind === "config") return normalizeConfigDoc(data)
+    return data
+  }
+
+  getOwnerSync(kind: DocKind, owner: string): SettingsDoc | undefined {
+    if (kind !== "config") {
+      const data = this.stateStore.getSync()
+      return data ? (isPlainObject((data as any)?.[owner]) ? (data as any)?.[owner] : {}) : undefined
+    }
+    const doc = this.getDocSync("config")
+    if (!doc) return undefined
+    if (owner === "server") return normalizeServerConfigOwner(doc.server as SettingsDoc)
+    return (doc as any)?.[owner] as SettingsDoc | undefined
+  }
+
   async getDoc(kind: DocKind): Promise<SettingsDoc> {
     if (kind !== "config") {
       return this.stateStore.get()

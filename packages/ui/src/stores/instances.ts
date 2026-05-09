@@ -49,25 +49,34 @@ const MAX_CACHED_INSTANCES = 3
 function setActiveInstanceId(id: string | null) {
   _setActiveInstanceId(id)
   queueMicrotask(() => {
-    evictInactiveInstanceStores(id)
+    cleanupZombieStores()
   })
 }
 
-function evictInactiveInstanceStores(activeId: string | null | undefined) {
-  if (!activeId) return
-
-  const allInstanceIds = messageStoreBus.getStoreInstanceIds()
-  if (allInstanceIds.length <= MAX_CACHED_INSTANCES) return
-
-  const inactiveIds = allInstanceIds.filter((id) => id !== activeId)
-  const toEvict = inactiveIds.length - (MAX_CACHED_INSTANCES - 1)
-  if (toEvict <= 0) return
-
-  for (let i = 0; i < toEvict; i++) {
-    messageStoreBus.clearInstanceData(inactiveIds[i])
-    log.info("Evicted message data for inactive instance", { instanceId: inactiveIds[i] })
+function cleanupZombieStores() {
+  const allStoreIds = messageStoreBus.getStoreInstanceIds()
+  const currentIds = new Set(instances().keys())
+  for (const id of allStoreIds) {
+    if (!currentIds.has(id)) {
+      messageStoreBus.unregisterInstance(id)
+    }
   }
 }
+
+// Disabled: aggressive eviction clears messages from active workspace tabs.
+// instance-store already has MAX_MESSAGES_PER_INSTANCE=500 per-instance cap.
+// function evictInactiveInstanceStores(activeId: string | null | undefined) {
+//   if (!activeId) return
+//   const allInstanceIds = messageStoreBus.getStoreInstanceIds()
+//   if (allInstanceIds.length <= MAX_CACHED_INSTANCES) return
+//   const inactiveIds = allInstanceIds.filter((id) => id !== activeId)
+//   const toEvict = inactiveIds.length - (MAX_CACHED_INSTANCES - 1)
+//   if (toEvict <= 0) return
+//   for (let i = 0; i < toEvict; i++) {
+//     messageStoreBus.clearInstanceData(inactiveIds[i])
+//     log.info("Evicted message data for inactive instance", { instanceId: inactiveIds[i] })
+//   }
+// }
 const [instanceLogs, setInstanceLogs] = createSignal<Map<string, LogEntry[]>>(new Map())
 const [logStreamingState, setLogStreamingState] = createSignal<Map<string, boolean>>(new Map())
 
@@ -380,8 +389,16 @@ async function disposeInstance(instanceId: string): Promise<boolean> {
   void (async function initializeWorkspaces() {
   try {
     const workspaces = await serverApi.fetchWorkspaces()
-    workspaces.forEach((workspace) => upsertWorkspace(workspace))
-    // After a UI refresh, we may have instances but no active selection.
+    workspaces.forEach((workspace) => {
+      upsertWorkspace(workspace)
+      if (workspace.status === "suspended") {
+        serverApi.resumeWorkspace(workspace.id).then((resumed) => {
+          upsertWorkspace(resumed)
+        }).catch(() => {
+          // resume failed, keep suspended
+        })
+      }
+    })
     ensureActiveInstanceSelected()
   } catch (error) {
     log.error("Failed to load workspaces", error)
@@ -407,6 +424,21 @@ function handleWorkspaceEvent(event: WorkspaceEventPayload) {
       releaseInstanceResources(event.workspaceId)
       removeInstance(event.workspaceId)
       break
+    case "workspace.suspended": {
+      const suspendedId = event.workspace?.id
+      if (suspendedId) {
+        updateInstance(suspendedId, { status: "suspended" })
+        releaseInstanceResources(suspendedId)
+      }
+      break
+    }
+    case "workspace.resumed": {
+      const resumedId = event.workspace?.id
+      if (resumedId) {
+        upsertWorkspace(event.workspace)
+      }
+      break
+    }
     case "workspace.log":
       handleWorkspaceLog(event.entry)
       break

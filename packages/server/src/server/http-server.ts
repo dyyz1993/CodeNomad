@@ -568,10 +568,21 @@ async function proxyWorkspaceRequest(args: {
     return
   }
 
-  const port = workspaceManager.getInstancePort(workspaceId)
+  let port = workspaceManager.getInstancePort(workspaceId)
   if (!port) {
-    reply.code(502).send({ error: "Workspace instance is not ready" })
-    return
+    if (workspace.status === "suspended") {
+      try {
+        await workspaceManager.resumeWorkspace(workspaceId)
+        port = workspaceManager.getInstancePort(workspaceId)
+      } catch (err) {
+        reply.code(502).send({ error: "Failed to resume workspace", details: String(err) })
+        return
+      }
+    }
+    if (!port) {
+      reply.code(502).send({ error: "Workspace instance is not ready" })
+      return
+    }
   }
 
   if (!isValidWorktreeSlug(worktreeSlug)) {

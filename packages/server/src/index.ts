@@ -337,6 +337,7 @@ async function main() {
     logger: workspaceLogger,
     getServerBaseUrl: () => serverMeta.localUrl,
     nodeExtraCaCertsPath,
+    configDir,
   })
   const fileSystemBrowser = new FileSystemBrowser({
     rootDir: options.rootDir,

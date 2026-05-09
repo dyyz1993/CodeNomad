@@ -1,7 +1,10 @@
+import os from "os"
 import path from "path"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { connect } from "net"
+import { readFile, writeFile, mkdir } from "node:fs/promises"
+import { existsSync } from "node:fs"
 
 const execFileAsync = promisify(execFile)
 import { EventBus } from "../events/bus"
@@ -22,7 +25,7 @@ import {
   resolveOpencodeServerAuth,
 } from "./opencode-auth"
 
-const STARTUP_STABILITY_DELAY_MS = 1500
+const STARTUP_STABILITY_DELAY_MS = 300
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000
 const IDLE_CHECK_INTERVAL_MS = 60 * 1000
 const MAX_ACTIVE_WORKSPACES = 3
@@ -36,6 +39,8 @@ interface WorkspaceManagerOptions {
   getServerBaseUrl: () => string
   /** Optional CA bundle path to trust CodeNomad HTTPS certs. */
   nodeExtraCaCertsPath?: string
+  /** Base config directory for persisting state files. */
+  configDir?: string
 }
 
 interface WorkspaceRecord extends WorkspaceDescriptor {}
@@ -45,6 +50,7 @@ export class WorkspaceManager {
   private readonly runtime: WorkspaceRuntime
   private readonly opencodeConfigDir: string
   private readonly opencodeAuth = new Map<string, { username: string; password: string; authorization: string }>()
+  private readonly stateFilePath: string
 
   private readonly MAX_CONCURRENT_STARTUPS = 3
   private activeStartups = 0
@@ -75,7 +81,58 @@ export class WorkspaceManager {
   constructor(private readonly options: WorkspaceManagerOptions) {
     this.runtime = new WorkspaceRuntime(this.options.eventBus, this.options.logger)
     this.opencodeConfigDir = getOpencodeConfigDir()
+    this.stateFilePath = path.join(
+      this.options.configDir ?? path.join(os.homedir(), ".config", "codenomad"),
+      "workspaces-state.json",
+    )
+    void this.loadState()
     this.startIdleCheck()
+  }
+
+  private async saveState(): Promise<void> {
+    const data = Array.from(this.workspaces.entries()).map(([id, w]) => ({
+      id,
+      path: w.path,
+      name: w.name,
+      proxyPath: w.proxyPath,
+    }))
+    try {
+      await mkdir(path.dirname(this.stateFilePath), { recursive: true })
+      await writeFile(this.stateFilePath, JSON.stringify(data, null, 2), "utf-8")
+    } catch (err) {
+      this.options.logger.warn({ err }, "Failed to save workspaces state")
+    }
+  }
+
+  private async loadState(): Promise<void> {
+    try {
+      if (!existsSync(this.stateFilePath)) return
+      const content = await readFile(this.stateFilePath, "utf-8")
+      const entries = JSON.parse(content) as Array<{
+        id: string
+        path: string
+        name?: string
+        proxyPath?: string
+      }>
+      for (const entry of entries) {
+        this.workspaces.set(entry.id, {
+          id: entry.id,
+          path: entry.path,
+          name: entry.name,
+          status: "suspended",
+          proxyPath: entry.proxyPath ?? `/workspaces/${entry.id}/worktrees/root/instance`,
+          binaryId: "",
+          binaryLabel: "",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        })
+      }
+      if (entries.length > 0) {
+        this.options.logger.info({ count: entries.length }, "Restored workspaces from disk")
+      }
+    } catch (err) {
+      this.options.logger.warn({ err }, "Failed to load workspaces state")
+    }
   }
 
   list(): WorkspaceDescriptor[] {
@@ -153,7 +210,7 @@ export class WorkspaceManager {
 
     this.options.eventBus.publish({ type: "workspace.created", workspace: descriptor })
 
-    const serverConfig = await this.options.settings.getOwner("config", "server")
+    const serverConfig = this.options.settings.getOwnerSync("config", "server") ?? {}
     const envVars = (serverConfig as any)?.environmentVariables
     const userEnvironment = envVars && typeof envVars === "object" && !Array.isArray(envVars) ? (envVars as any) : {}
     const serverBaseUrl = this.options.getServerBaseUrl()
@@ -204,6 +261,7 @@ export class WorkspaceManager {
       this.options.eventBus.publish({ type: "workspace.started", workspace: descriptor })
       this.recordActivity(id)
       this.options.logger.info({ workspaceId: id, port }, "Workspace ready")
+      void this.saveState()
       return descriptor
     } catch (error) {
       descriptor.status = "error"
@@ -237,6 +295,7 @@ export class WorkspaceManager {
     if (!wasRunning) {
       this.options.eventBus.publish({ type: "workspace.stopped", workspaceId: id })
     }
+    void this.saveState()
     return workspace
   }
 
@@ -604,6 +663,7 @@ export class WorkspaceManager {
     this.options.eventBus.publish({ type: "workspace.suspended", workspace: { ...workspace } })
     this.lastActivityTime.delete(id)
     this.workspaceBusy.delete(id)
+    void this.saveState()
   }
 
   async resumeWorkspace(id: string): Promise<WorkspaceDescriptor> {
@@ -627,7 +687,7 @@ export class WorkspaceManager {
       const binary = await this.options.binaryResolver.resolveDefault()
       const resolvedBinaryPath = await this.resolveBinaryPath(binary.path)
 
-      const serverConfig = await this.options.settings.getOwner("config", "server")
+      const serverConfig = this.options.settings.getOwnerSync("config", "server") ?? {}
       const envVars = (serverConfig as any)?.environmentVariables
       const userEnvironment = envVars && typeof envVars === "object" && !Array.isArray(envVars) ? (envVars as any) : {}
       const serverBaseUrl = this.options.getServerBaseUrl()
@@ -677,6 +737,7 @@ export class WorkspaceManager {
       this.recordActivity(id)
       this.options.eventBus.publish({ type: "workspace.resumed", workspace: { ...workspace } })
       this.options.logger.info({ workspaceId: id, port }, "Workspace resumed")
+      void this.saveState()
       return workspace
     } catch (error) {
       workspace.status = "error"

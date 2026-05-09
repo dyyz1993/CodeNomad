@@ -22,13 +22,17 @@ export interface AuthManagerInit {
 export class AuthManager {
   private readonly authStore: AuthStore | null
   private readonly tokenManager: TokenManager | null
-  private readonly sessionManager = new SessionManager()
+  private readonly sessionManager: SessionManager
   private readonly cookieName: string
   private readonly authEnabled: boolean
 
   constructor(private readonly init: AuthManagerInit, private readonly logger: Logger) {
     this.cookieName = sanitizeCookieName(init.cookieName)
     this.authEnabled = !Boolean(init.dangerouslySkipAuth)
+
+    const configDir = path.dirname(path.resolve(init.configPath.replace(/^~/, process.env.HOME ?? "")))
+
+    this.sessionManager = new SessionManager(configDir)
 
     if (!this.authEnabled) {
       this.authStore = null

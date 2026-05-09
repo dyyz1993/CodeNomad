@@ -318,6 +318,9 @@ export const serverApi = {
   deleteWorkspace(id: string): Promise<void> {
     return request(`/api/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" })
   },
+  resumeWorkspace(id: string): Promise<WorkspaceDescriptor> {
+    return request<WorkspaceDescriptor>(`/api/workspaces/${encodeURIComponent(id)}/resume`, { method: "POST" })
+  },
   listWorkspaceFiles(id: string, relativePath = "."): Promise<FileSystemEntry[]> {
     const params = new URLSearchParams({ path: relativePath })
     return request<FileSystemEntry[]>(`/api/workspaces/${encodeURIComponent(id)}/files?${params.toString()}`)

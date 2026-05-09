@@ -210,7 +210,7 @@ export class SideCarManager {
   }
 
   private async loadConfiguredSideCars(): Promise<SideCarConfigRecord[]> {
-    const serverConfig = await this.options.settings.getOwner("config", "server") as { sidecars?: unknown }
+    const serverConfig = (this.options.settings.getOwnerSync("config", "server") ?? await this.options.settings.getOwner("config", "server")) as { sidecars?: unknown }
     const list = Array.isArray(serverConfig?.sidecars) ? serverConfig.sidecars : []
     const records: SideCarConfigRecord[] = []
     for (const item of list) {

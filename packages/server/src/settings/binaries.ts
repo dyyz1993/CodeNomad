@@ -19,6 +19,19 @@ function prettyLabel(p: string): string {
   return last || p
 }
 
+function readUiBinariesSync(settings: SettingsService): OpenCodeBinaryEntry[] {
+  const ui = settings.getOwnerSync("state", "ui")
+  const list = (ui as any)?.opencodeBinaries
+  if (!Array.isArray(list)) return []
+  return list.filter((item) => item && typeof item === "object" && typeof (item as any).path === "string") as any
+}
+
+function readDefaultBinaryPathSync(settings: SettingsService): string | undefined {
+  const server = settings.getOwnerSync("config", "server")
+  const value = (server as any)?.opencodeBinary
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined
+}
+
 async function readUiBinaries(settings: SettingsService): Promise<OpenCodeBinaryEntry[]> {
   const ui = await settings.getOwner("state", "ui")
   const list = (ui as any)?.opencodeBinaries
@@ -36,12 +49,12 @@ export class BinaryResolver {
   constructor(private readonly settings: SettingsService) {}
 
   async list(): Promise<OpenCodeBinaryEntry[]> {
-    return readUiBinaries(this.settings)
+    return readUiBinariesSync(this.settings) ?? readUiBinaries(this.settings)
   }
 
   async resolveDefault(): Promise<ResolvedBinary> {
-    const binaries = await this.list()
-    const configuredDefault = await readDefaultBinaryPath(this.settings)
+    const binaries = readUiBinariesSync(this.settings) ?? (await readUiBinaries(this.settings))
+    const configuredDefault = readDefaultBinaryPathSync(this.settings) ?? (await readDefaultBinaryPath(this.settings))
     const fallback = binaries[0]?.path
     const path = configuredDefault ?? fallback ?? "opencode"
 

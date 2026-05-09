@@ -89,7 +89,25 @@ export class SpeechService {
     })
   }
 
+  private resolveSettingsSync(): NormalizedSpeechSettings {
+    const owner = this.settings.getOwnerSync("config", "server") ?? {}
+    const parsed = ServerSpeechSettingsSchema.parse(owner)
+    const speech = parsed.speech ?? {}
+
+    return {
+      provider: speech.provider?.trim() || DEFAULT_PROVIDER,
+      apiKey: speech.apiKey?.trim() || process.env.OPENAI_API_KEY,
+      baseUrl: speech.baseUrl?.trim() || process.env.OPENAI_BASE_URL || undefined,
+      sttModel: speech.sttModel?.trim() || DEFAULT_STT_MODEL,
+      ttsModel: speech.ttsModel?.trim() || DEFAULT_TTS_MODEL,
+      ttsVoice: speech.ttsVoice?.trim() || DEFAULT_TTS_VOICE,
+      ttsFormat: speech.ttsFormat ?? DEFAULT_TTS_FORMAT,
+    }
+  }
+
   private async resolveSettings(): Promise<NormalizedSpeechSettings> {
+    const syncResult = this.resolveSettingsSync()
+    if (syncResult.apiKey || process.env.OPENAI_API_KEY) return syncResult
     const parsed = ServerSpeechSettingsSchema.parse(await this.settings.getOwner("config", "server") ?? {})
     const speech = parsed.speech ?? {}
 

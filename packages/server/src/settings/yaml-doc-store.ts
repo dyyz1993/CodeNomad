@@ -28,6 +28,11 @@ export class YamlDocStore {
     private readonly logger: Logger,
   ) {}
 
+  getSync(): SettingsDoc | undefined {
+    if (this.loaded) return this.cache
+    return undefined
+  }
+
   async load(): Promise<SettingsDoc> {
     if (this.loaded) {
       return this.cache

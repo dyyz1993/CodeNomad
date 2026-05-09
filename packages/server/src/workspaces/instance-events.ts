@@ -22,6 +22,8 @@ const INSTANCE_HOST = "127.0.0.1"
 const STREAM_AGENT = new UndiciAgent({ bodyTimeout: 0, headersTimeout: 0 })
 const RECONNECT_DELAY_MS = 1000
 const LOG_THROTTLE_MS = 50
+const ACTIVITY_THROTTLE_MS = 1000
+const activityThrottleTime = new Map<string, number>()
 
 interface InstanceEventBridgeOptions {
   workspaceManager: WorkspaceManager
@@ -86,6 +88,7 @@ export class InstanceEventBridge {
     active.controller.abort()
     this.streams.delete(workspaceId)
     this.lastLogTime.delete(workspaceId)
+    activityThrottleTime.delete(workspaceId)
     this.publishStatus(workspaceId, "disconnected", reason)
   }
 
@@ -161,7 +164,12 @@ export class InstanceEventBridge {
   }
 
   private processChunk(chunk: string, workspaceId: string) {
-    this.options.workspaceManager.recordActivity(workspaceId)
+    const now = Date.now()
+    const lastTime = activityThrottleTime.get(workspaceId) ?? 0
+    if (now - lastTime >= ACTIVITY_THROTTLE_MS) {
+      this.options.workspaceManager.recordActivity(workspaceId)
+      activityThrottleTime.set(workspaceId, now)
+    }
 
     const lines = chunk.split(/\r?\n/)
     const dataLines: string[] = []
