@@ -11,8 +11,21 @@ import { removeMessagePartV2, removeMessageV2 } from "./message-v2/bridge"
 import { getLogger } from "../lib/logger"
 import { requestData } from "../lib/opencode-api"
 import { clearConversationPlaybackForSession } from "./conversation-speech"
+import { fetchSessions } from "./session-api"
 
 const log = getLogger("actions")
+
+async function resolveSession(instanceId: string, sessionId: string) {
+  let session = sessions().get(instanceId)?.get(sessionId)
+  if (session) return session
+  try {
+    await fetchSessions(instanceId)
+    session = sessions().get(instanceId)?.get(sessionId)
+  } catch (refreshError) {
+    log.warn("Failed to refresh sessions", { instanceId, sessionId, error: refreshError })
+  }
+  return session ?? null
+}
 
 function getVariantKeysForModel(instanceId: string, model: { providerId: string; modelId: string }): string[] {
   if (!model.providerId || !model.modelId) return []
@@ -88,8 +101,7 @@ async function sendMessage(
   const worktreeSlug = getWorktreeSlugForSession(instanceId, sessionId)
   const client = getOrCreateWorktreeClient(instanceId, worktreeSlug)
 
-  const instanceSessions = sessions().get(instanceId)
-  const session = instanceSessions?.get(sessionId)
+  const session = await resolveSession(instanceId, sessionId)
   if (!session) {
     throw new Error("Session not found")
   }
@@ -236,7 +248,7 @@ async function executeCustomCommand(
   const worktreeSlug = getWorktreeSlugForSession(instanceId, sessionId)
   const client = getOrCreateWorktreeClient(instanceId, worktreeSlug)
 
-  const session = sessions().get(instanceId)?.get(sessionId)
+  const session = await resolveSession(instanceId, sessionId)
   if (!session) {
     throw new Error("Session not found")
   }
@@ -282,7 +294,7 @@ async function runShellCommand(instanceId: string, sessionId: string, command: s
   const worktreeSlug = getWorktreeSlugForSession(instanceId, sessionId)
   const client = getOrCreateWorktreeClient(instanceId, worktreeSlug)
 
-  const session = sessions().get(instanceId)?.get(sessionId)
+  const session = await resolveSession(instanceId, sessionId)
   if (!session) {
     throw new Error("Session not found")
   }
@@ -326,8 +338,7 @@ async function abortSession(instanceId: string, sessionId: string): Promise<void
 }
 
 async function updateSessionAgent(instanceId: string, sessionId: string, agent: string): Promise<void> {
-  const instanceSessions = sessions().get(instanceId)
-  const session = instanceSessions?.get(sessionId)
+  const session = await resolveSession(instanceId, sessionId)
   if (!session) {
     throw new Error("Session not found")
   }
@@ -356,8 +367,7 @@ async function updateSessionModel(
   sessionId: string,
   model: { providerId: string; modelId: string },
 ): Promise<void> {
-  const instanceSessions = sessions().get(instanceId)
-  const session = instanceSessions?.get(sessionId)
+  const session = await resolveSession(instanceId, sessionId)
   if (!session) {
     throw new Error("Session not found")
   }
@@ -388,7 +398,7 @@ async function renameSession(instanceId: string, sessionId: string, nextTitle: s
   const worktreeSlug = getWorktreeSlugForSession(instanceId, sessionId)
   const client = getOrCreateWorktreeClient(instanceId, worktreeSlug)
 
-  const session = sessions().get(instanceId)?.get(sessionId)
+  const session = await resolveSession(instanceId, sessionId)
   if (!session) {
     throw new Error("Session not found")
   }

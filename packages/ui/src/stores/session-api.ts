@@ -642,10 +642,19 @@ async function loadMessages(instanceId: string, sessionId: string, force = false
   const worktreeSlug = getWorktreeSlugForSession(instanceId, sessionId)
   const client = getOrCreateWorktreeClient(instanceId, worktreeSlug)
 
-  const instanceSessions = sessions().get(instanceId)
-  const session = instanceSessions?.get(sessionId)
+  let instanceSessions = sessions().get(instanceId)
+  let session = instanceSessions?.get(sessionId)
   if (!session) {
-    throw new Error("Session not found")
+    try {
+      await fetchSessions(instanceId)
+      instanceSessions = sessions().get(instanceId)
+      session = instanceSessions?.get(sessionId)
+    } catch (refreshError) {
+      log.warn("Failed to refresh sessions during loadMessages", { instanceId, sessionId, error: refreshError })
+    }
+    if (!session) {
+      throw new Error("Session not found")
+    }
   }
 
   // Fetch session-level diffs in the background once the session is opened.
