@@ -9,6 +9,7 @@ import { connect as connectTls, type TLSSocket } from "tls"
 import { fetch } from "undici"
 import type { Logger } from "../logger"
 import { WorkspaceManager } from "../workspaces/manager"
+import type { AutoContinueManager } from "../workspaces/auto-continue"
 import { isValidWorktreeSlug, listWorktrees, resolveRepoRoot } from "../workspaces/git-worktrees"
 import { resolveWorktreeDirectory } from "../workspaces/worktree-directory"
 
@@ -49,6 +50,7 @@ interface HttpServerDeps {
   protocol: "http" | "https"
   httpsOptions?: { key: string | Buffer; cert: string | Buffer; ca?: string | Buffer }
   workspaceManager: WorkspaceManager
+  autoContinueManager?: AutoContinueManager
   settings: SettingsService
   fileSystemBrowser: FileSystemBrowser
   eventBus: EventBus
@@ -280,7 +282,7 @@ export function createHttpServer(deps: HttpServerDeps) {
     reply.code(404).send({ message: "UI bundle missing" })
   })
 
-  registerWorkspaceRoutes(app, { workspaceManager: deps.workspaceManager })
+  registerWorkspaceRoutes(app, { workspaceManager: deps.workspaceManager, autoContinueManager: deps.autoContinueManager })
   registerSettingsRoutes(app, { settings: deps.settings, logger: apiLogger })
   registerFilesystemRoutes(app, { fileSystemBrowser: deps.fileSystemBrowser })
   registerMetaRoutes(app, { serverMeta: deps.serverMeta })

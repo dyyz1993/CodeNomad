@@ -555,6 +555,38 @@ export const serverApi = {
     attachEventSourceHandlers(source, { onEvent, onError, onPing, logger: sseLogger })
     return source
   },
+
+  fetchAutoContinue(
+    workspaceId: string,
+    sessionId: string,
+  ): Promise<{
+    enabled: boolean
+    prompt: string
+    cooldownMs: number
+    maxTriggers: number
+    confirmSeconds: number
+    triggerCount: number
+    lastTriggerAt: number
+  }> {
+    return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/auto-continue/${encodeURIComponent(sessionId)}`)
+  },
+
+  updateAutoContinue(
+    workspaceId: string,
+    sessionId: string,
+    updates: {
+      enabled?: boolean
+      prompt?: string
+      cooldownMs?: number
+      maxTriggers?: number
+      confirmSeconds?: number
+    },
+  ): Promise<void> {
+    return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/auto-continue/${encodeURIComponent(sessionId)}`, {
+      method: "PUT",
+      body: JSON.stringify(updates),
+    })
+  },
 }
 
 function buildClientEventsUrl(identity: { clientId: string; connectionId: string }): string {

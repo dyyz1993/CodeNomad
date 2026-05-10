@@ -94,4 +94,10 @@ export const sessionMessages = {
   "sessionState.cleanup.deepConfirm.cancelLabel": "Cancel",
   "sessionState.cleanup.toast.one": "Cleaned up {count} blank session",
   "sessionState.cleanup.toast.other": "Cleaned up {count} blank sessions",
+
+  "autoContinue.label": "Auto-Continue",
+  "autoContinue.countTitle": "Triggered {count} of {max} times",
+  "autoContinue.expand": "Customize prompt",
+  "autoContinue.collapse": "Collapse prompt",
+  "autoContinue.promptPlaceholder": "Custom auto-continue prompt...",
 } as const

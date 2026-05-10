@@ -6,6 +6,7 @@ import MessageSection from "../message-section"
 import { messageStoreBus } from "../../stores/message-v2/bus"
 import PromptInput from "../prompt-input"
 import PromptAttachmentsBar from "../prompt-input/PromptAttachmentsBar"
+import AutoContinueControls from "../auto-continue-controls"
 import { getAttachments, removeAttachment } from "../../stores/attachments"
 import { instances } from "../../stores/instances"
 import { loadMessages, sendMessage, forkSession, renameSession, isSessionMessagesLoading, markViewedSessionIdleSeen, setActiveParentSession, setActiveSession, runShellCommand, abortSession } from "../../stores/sessions"
@@ -426,6 +427,11 @@ export const SessionView: Component<SessionViewProps> = (props) => {
                 onAbortSession={handleAbortSession}
                 registerPromptInputApi={registerPromptInputApi}
                 />
+              <AutoContinueControls
+                workspaceId={props.instanceId}
+                sessionId={activeSession.id}
+                isParentSession={!activeSession.parentId}
+              />
             </div>
           )
         }}

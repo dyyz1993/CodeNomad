@@ -4,6 +4,7 @@ import { EventBus } from "../events/bus"
 import { Logger } from "../logger"
 import { WorkspaceManager } from "./manager"
 import { InstanceStreamEvent, InstanceStreamStatus } from "../api-types"
+import type { AutoContinueManager } from "./auto-continue"
 
 const BUSY_EVENTS = new Set([
   "message.updated",
@@ -29,6 +30,7 @@ interface InstanceEventBridgeOptions {
   workspaceManager: WorkspaceManager
   eventBus: EventBus
   logger: Logger
+  autoContinueManager?: AutoContinueManager
 }
 
 interface ActiveStream {
@@ -245,11 +247,27 @@ export class InstanceEventBridge {
 
     if (IDLE_EVENTS.has(eventType)) {
       this.options.workspaceManager.markIdle(workspaceId)
+
+      if (this.options.autoContinueManager) {
+        const sessionId = event.properties?.sessionID as string | undefined
+        if (sessionId) {
+          const parentSessionId = event.properties?.parentSessionID as string | undefined
+          const isMainSession = !parentSessionId
+          this.options.autoContinueManager.onSessionIdle(workspaceId, sessionId, isMainSession)
+        }
+      }
       return
     }
 
     if (BUSY_EVENTS.has(eventType)) {
       this.options.workspaceManager.markBusy(workspaceId)
+
+      if (this.options.autoContinueManager) {
+        const sessionId = event.properties?.sessionID as string | undefined
+        if (sessionId) {
+          this.options.autoContinueManager.onSessionBusy(workspaceId, sessionId)
+        }
+      }
     }
   }
 

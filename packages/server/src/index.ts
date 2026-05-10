@@ -30,6 +30,7 @@ import { ClientConnectionManager } from "./clients/connection-manager"
 import { PluginChannelManager } from "./plugins/channel"
 import { VoiceModeManager } from "./plugins/voice-mode"
 import { runCliUpgrade } from "./cli-upgrade"
+import { AutoContinueManager } from "./workspaces/auto-continue"
 
 const require = createRequire(import.meta.url)
 
@@ -350,10 +351,12 @@ async function main() {
     eventBus,
     logger: logger.child({ component: "sidecars" }),
   })
+  const autoContinueManager = new AutoContinueManager(logger, workspaceManager)
   const instanceEventBridge = new InstanceEventBridge({
     workspaceManager,
     eventBus,
     logger: logger.child({ component: "instance-events" }),
+    autoContinueManager,
   })
 
   const uiDirEnvOverride = Boolean(process.env.CLI_UI_DIR)
@@ -440,6 +443,7 @@ async function main() {
         defaultPort: options.httpPort,
         protocol: "http",
         workspaceManager,
+        autoContinueManager,
         settings,
         fileSystemBrowser,
         eventBus,
@@ -466,6 +470,7 @@ async function main() {
         protocol: "https",
         httpsOptions: tlsResolution?.httpsOptions,
         workspaceManager,
+        autoContinueManager,
         settings,
         fileSystemBrowser,
         eventBus,

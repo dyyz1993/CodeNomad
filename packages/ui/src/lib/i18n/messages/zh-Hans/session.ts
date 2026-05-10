@@ -94,4 +94,10 @@ export const sessionMessages = {
   "sessionState.cleanup.deepConfirm.cancelLabel": "取消",
   "sessionState.cleanup.toast.one": "已清理 {count} 个空白会话",
   "sessionState.cleanup.toast.other": "已清理 {count} 个空白会话",
+
+  "autoContinue.label": "自动续跑",
+  "autoContinue.countTitle": "已触发 {count}/{max} 次",
+  "autoContinue.expand": "自定义提示词",
+  "autoContinue.collapse": "收起提示词",
+  "autoContinue.promptPlaceholder": "自定义自动续跑提示词...",
 } as const

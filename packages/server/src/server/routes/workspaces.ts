@@ -5,9 +5,11 @@ import { getWorktreeGitDiff, getWorktreeGitStatus } from "../../workspaces/git-s
 import { commitWorktreeChanges, isGitMutationError, stageWorktreePaths, unstageWorktreePaths } from "../../workspaces/git-mutations"
 import { isGitAvailable, resolveRepoRoot } from "../../workspaces/git-worktrees"
 import { resolveWorktreeDirectory } from "../../workspaces/worktree-directory"
+import type { AutoContinueManager } from "../../workspaces/auto-continue"
 
 interface RouteDeps {
   workspaceManager: WorkspaceManager
+  autoContinueManager?: AutoContinueManager
 }
 
 const WorkspaceCreateSchema = z.object({
@@ -238,6 +240,52 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: RouteDeps) {
       return handleWorkspaceError(error, reply)
     }
   })
+
+  if (deps.autoContinueManager) {
+    const AutoContinueUpdateSchema = z.object({
+      enabled: z.boolean().optional(),
+      prompt: z.string().optional(),
+      cooldownMs: z.number().int().positive().optional(),
+      maxTriggers: z.number().int().positive().optional(),
+      confirmSeconds: z.number().int().positive().optional(),
+    })
+
+    app.get<{
+      Params: { id: string; sessionId: string }
+    }>("/api/workspaces/:id/auto-continue/:sessionId", async (request, reply) => {
+      const workspace = deps.workspaceManager.get(request.params.id)
+      if (!workspace) {
+        reply.code(404)
+        return { error: "Workspace not found" }
+      }
+      const state = deps.autoContinueManager!.getState(request.params.id, request.params.sessionId)
+      if (!state) {
+        return { enabled: false, triggerCount: 0, maxTriggers: 20, cooldownMs: 60000 }
+      }
+      return {
+        enabled: state.config.enabled,
+        prompt: state.config.prompt,
+        cooldownMs: state.config.cooldownMs,
+        maxTriggers: state.config.maxTriggers,
+        confirmSeconds: state.config.confirmSeconds,
+        triggerCount: state.triggerCount,
+        lastTriggerAt: state.lastTriggerAt,
+      }
+    })
+
+    app.put<{
+      Params: { id: string; sessionId: string }
+    }>("/api/workspaces/:id/auto-continue/:sessionId", async (request, reply) => {
+      const workspace = deps.workspaceManager.get(request.params.id)
+      if (!workspace) {
+        reply.code(404)
+        return { error: "Workspace not found" }
+      }
+      const body = AutoContinueUpdateSchema.parse(request.body ?? {})
+      const config = deps.autoContinueManager!.setConfig(request.params.id, request.params.sessionId, body)
+      return config
+    })
+  }
 }
 
 async function resolveGitWorktreeDirectory(
