@@ -454,7 +454,7 @@ jobs:
         run: |
           git clone https://github.com/dyyz1993/codenomad-tunnel.git /tmp/codenomad-tunnel
           cd /tmp/codenomad-tunnel
-          go build -o /tmp/tunnel-hub ./cmd/hub
+          go build -o /tmp/tunnel-hub .
 
       - name: Build CodeNomad from source
         run: |
