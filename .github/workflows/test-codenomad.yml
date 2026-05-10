@@ -361,7 +361,6 @@ jobs:
   e2e-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [build-test]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -369,23 +368,20 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Build UI
-        run: npm run build:ui
-
-      - name: Build server
-        run: cd packages/server && npm run build
+      - name: Get published version
+        run: echo "VERSION=$(npm view @dyyz1993/codenomad version)" >> $GITHUB_ENV
 
       - name: Install Playwright
         run: npx playwright install --with-deps chromium
 
-      - name: Create temp config dir
-        run: mkdir -p /tmp/codenomad-e2e-config
-
-      - name: Start server
+      - name: Start CodeNomad server
         run: |
-          node packages/server/dist/index.js \
+          mkdir -p /tmp/codenomad-e2e-config
+          npx -y @dyyz1993/codenomad@${{ env.VERSION }} \
+            --launch \
             --password e2etest \
             --host 127.0.0.1 \
             --http-port 19899 \
@@ -393,7 +389,6 @@ jobs:
             --unrestricted-root \
             --config /tmp/codenomad-e2e-config \
             --auth-cookie-name codenomad-e2e \
-            --ui-dir packages/server/public \
             > /tmp/codenomad-e2e.log 2>&1 &
           echo "CODENOMAD_PID=$!" >> $GITHUB_ENV
 
@@ -401,22 +396,19 @@ jobs:
         run: |
           for i in $(seq 1 30); do
             if curl -sf http://127.0.0.1:19899/api/health > /dev/null 2>&1; then
-              echo "Server ready after ${i} attempts"
+              echo "Server ready"
               break
             fi
             echo "Waiting... ($i/30)"
             sleep 2
           done
-          curl -sf http://127.0.0.1:19899/api/health || (echo "Server failed to start" && cat /tmp/codenomad-e2e.log && exit 1)
+          curl -sf http://127.0.0.1:19899/api/health > /dev/null || (echo "=== Server log ===" && cat /tmp/codenomad-e2e.log && exit 1)
 
-      - name: Login to get auth cookie
-        run: |
-          curl -sf -c /tmp/e2e-cookies.txt -X POST http://127.0.0.1:19899/api/auth/login \
-            -H "Content-Type: application/json" \
-            -d '{"username":"codenomad","password":"e2etest"}' || true
-
-      - name: Run Playwright tests
-        run: E2E_BASE_URL=http://127.0.0.1:19899 E2E_PASSWORD=e2etest npx playwright test --reporter=list
+      - name: Run E2E smoke tests
+        env:
+          E2E_BASE_URL: http://127.0.0.1:19899
+          E2E_PASSWORD: e2etest
+        run: npx playwright test --reporter=list
 
       - name: Upload Playwright report
         if: always()
