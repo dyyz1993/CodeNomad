@@ -33,6 +33,13 @@
   - [x] Server 端: `packages/server/src/plugins/cross-session.ts` — 跨 workspace 查找 + prompt_async 转发
   - [x] Plugin 端: `packages/opencode-config/plugin/lib/cross-session.ts` — list_sessions + send_message 工具
   - [x] 注册工具到插件 + 注册路由到 HTTP server
+- [x] **0.15.29** Refactor: 简化跨会话消息格式，减少 token
+- [x] **0.15.30** Enhance: 增强跨会话通信
+  - [x] list_sessions 返回项目名 + 主会话 + 描述（过滤子任务，每项目限5条）
+  - [x] 通信记录追踪（谁→谁、话题、时间，最近100条）
+  - [x] chat.message hook 自动注入通信历史到 AI 上下文
+  - [x] get_communication_history 工具供 AI 主动查询
+  - [x] GET /cross-session/history API 端点
 
 ## Backlog
 
