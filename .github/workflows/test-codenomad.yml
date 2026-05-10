@@ -368,11 +368,15 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Get latest version
+        id: version
+        run: echo "version=$(npm view @dyyz1993/codenomad version)" >> $GITHUB_OUTPUT
 
-      - name: Get published version
-        run: echo "VERSION=$(npm view @dyyz1993/codenomad version)" >> $GITHUB_ENV
+      - name: Install codenomad
+        run: |
+          for i in 1 2 3; do
+            npm install -g @dyyz1993/codenomad@${{ steps.version.outputs.version }} && break || sleep 10
+          done
 
       - name: Install Playwright
         run: npx playwright install --with-deps chromium
@@ -380,8 +384,7 @@ jobs:
       - name: Start CodeNomad server
         run: |
           mkdir -p /tmp/codenomad-e2e-config
-          npx -y @dyyz1993/codenomad@${{ env.VERSION }} \
-            --launch \
+          codenomad \
             --password e2etest \
             --host 127.0.0.1 \
             --http-port 19899 \
@@ -395,14 +398,14 @@ jobs:
       - name: Wait for server ready
         run: |
           for i in $(seq 1 30); do
-            if curl -sf http://127.0.0.1:19899/api/health > /dev/null 2>&1; then
+            if curl -sf http://127.0.0.1:19899/api/auth/status > /dev/null 2>&1; then
               echo "Server ready"
               break
             fi
             echo "Waiting... ($i/30)"
             sleep 2
           done
-          curl -sf http://127.0.0.1:19899/api/health > /dev/null || (echo "=== Server log ===" && cat /tmp/codenomad-e2e.log && exit 1)
+          curl -sf http://127.0.0.1:19899/api/auth/status > /dev/null || (echo "=== Server log ===" && cat /tmp/codenomad-e2e.log && exit 1)
 
       - name: Run E2E smoke tests
         env:
