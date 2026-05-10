@@ -462,6 +462,12 @@ jobs:
           cd packages/ui && npm run build && cd ../..
           cd packages/server && npm run prepare-ui && npx tsc -p tsconfig.json && node ./scripts/copy-auth-pages.mjs && npm run prepare-config && cd ../..
 
+      - name: Verify build output
+        run: |
+          ls packages/server/dist/server/proxy/ 2>/dev/null || echo "WARNING: proxy dir missing from dist"
+          ls packages/server/dist/server/http-server.js 2>/dev/null || echo "WARNING: http-server.js missing from dist"
+          ls packages/server/dist/index.js 2>/dev/null || echo "WARNING: index.js missing from dist"
+
       - name: Start test HTTP service
         run: |
           mkdir -p /tmp/tunnel-test
