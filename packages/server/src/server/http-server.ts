@@ -597,9 +597,24 @@ async function proxyWorkspaceRequest(args: {
         reply.code(502).send({ error: "Failed to resume workspace", details: String(err) })
         return
       }
+    } else if (workspace.status === "starting") {
+      try {
+        logger.debug({ workspaceId, status: workspace.status }, "Workspace is starting, waiting for readiness")
+        await workspaceManager.waitForInstanceReady(workspaceId, 30_000)
+        port = workspaceManager.getInstancePort(workspaceId)
+      } catch (err) {
+        reply
+          .header("Retry-After", "5")
+          .code(503)
+          .send({ error: "Workspace instance is starting", details: String(err) })
+        return
+      }
     }
     if (!port) {
-      reply.code(502).send({ error: "Workspace instance is not ready" })
+      reply
+        .header("Retry-After", "5")
+        .code(503)
+        .send({ error: "Workspace instance is not ready" })
       return
     }
   }
@@ -702,6 +717,18 @@ async function proxyWorkspaceRequest(args: {
       return headers
     },
     onError: (proxyReply, { error }) => {
+      const errorCode = (error as NodeJS.ErrnoException)?.code
+      const isConnectionRefused = errorCode === "ECONNREFUSED"
+      if (isConnectionRefused) {
+        logger.warn({ workspaceId, targetUrl, err: error }, "Instance not yet accepting connections (ECONNREFUSED)")
+        if (!proxyReply.sent) {
+          proxyReply
+            .header("Retry-After", "2")
+            .code(503)
+            .send({ error: "Workspace instance is starting, please retry" })
+        }
+        return
+      }
       logger.error({ err: error, workspaceId, targetUrl }, "Failed to proxy workspace request")
       if (!proxyReply.sent) {
         proxyReply.code(502).send({ error: "Workspace instance proxy failed" })

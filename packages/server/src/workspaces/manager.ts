@@ -666,6 +666,46 @@ export class WorkspaceManager {
     void this.saveState()
   }
 
+  async waitForInstanceReady(id: string, timeoutMs = 30_000): Promise<WorkspaceDescriptor> {
+    const workspace = this.workspaces.get(id)
+    if (!workspace) {
+      throw new Error("Workspace not found")
+    }
+    if (workspace.status === "ready") {
+      return workspace
+    }
+    if (workspace.status !== "starting") {
+      throw new Error(`Workspace is ${workspace.status}, cannot wait for readiness`)
+    }
+
+    const pollIntervalMs = 200
+    const deadline = Date.now() + timeoutMs
+
+    return new Promise<WorkspaceDescriptor>((resolve, reject) => {
+      const poll = () => {
+        const current = this.workspaces.get(id)
+        if (!current) {
+          reject(new Error("Workspace not found"))
+          return
+        }
+        if (current.status === "ready") {
+          resolve(current)
+          return
+        }
+        if (current.status === "error") {
+          reject(new Error(current.error ?? "Workspace entered error state"))
+          return
+        }
+        if (Date.now() >= deadline) {
+          reject(new Error(`Workspace ${id} did not become ready within ${timeoutMs}ms`))
+          return
+        }
+        setTimeout(poll, pollIntervalMs)
+      }
+      setTimeout(poll, pollIntervalMs)
+    })
+  }
+
   async resumeWorkspace(id: string): Promise<WorkspaceDescriptor> {
     const workspace = this.workspaces.get(id)
     if (!workspace || workspace.status !== "suspended") {
