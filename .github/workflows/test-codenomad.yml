@@ -459,7 +459,9 @@ jobs:
       - name: Build CodeNomad from source
         run: |
           npm install
-          npm run build
+          cd packages/ui && npm run build
+          cd ../.. 
+          cd packages/server && npm run build:server-only 2>/dev/null || npx tsc -p tsconfig.json
 
       - name: Start test HTTP service
         run: |
