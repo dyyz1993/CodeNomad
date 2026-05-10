@@ -498,6 +498,43 @@
   justify-content: flex-end;
 }
 
+.tunnel-url-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 24rem;
+}
+
+.tunnel-url-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.tunnel-status-indicator {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  font-size: var(--font-size-sm);
+  border: 1px solid transparent;
+}
+
+.tunnel-status-connected {
+  color: #16a34a;
+  background: color-mix(in srgb, #16a34a 8%, var(--surface-base));
+  border-color: color-mix(in srgb, #16a34a 20%, var(--border-base));
+}
+
+.tunnel-status-disconnected {
+  color: #dc2626;
+  background: color-mix(in srgb, #dc2626 8%, var(--surface-base));
+  border-color: color-mix(in srgb, #dc2626 20%, var(--border-base));
+}
+
+.tunnel-active-badge {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
 @media (max-width: 900px) {
   .modal-surface.settings-screen-shell {
     min-height: min(760px, calc(100vh - 1rem));

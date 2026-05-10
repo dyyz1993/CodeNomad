@@ -1,4 +1,5 @@
 import { FastifyInstance } from "fastify"
+import { fetch } from "undici"
 import type { TunnelClient } from "../../tunnel/tunnel-client"
 
 interface RouteDeps {
@@ -65,5 +66,32 @@ export function registerTunnelRoutes(app: FastifyInstance, deps: RouteDeps) {
 
     const urls = deps.tunnelClient.getUntunneledUrls(text)
     return { urls }
+  })
+
+  app.post<{
+    Body: { hubUrl: string }
+  }>("/api/tunnels/test-connection", async (request, reply) => {
+    const { hubUrl } = request.body ?? {}
+
+    if (!hubUrl) {
+      reply.code(400).send({ error: "hubUrl is required" })
+      return
+    }
+
+    try {
+      const url = hubUrl.replace(/\/+$/, "")
+      const response = await fetch(`${url}:8080/api/health`, {
+        signal: AbortSignal.timeout(5000),
+      })
+
+      if (response.ok) {
+        const body = await response.json()
+        return { connected: true, hubUrl, status: body }
+      } else {
+        return { connected: false, hubUrl, error: `HTTP ${response.status}` }
+      }
+    } catch (err) {
+      return { connected: false, hubUrl, error: (err as Error).message }
+    }
   })
 }

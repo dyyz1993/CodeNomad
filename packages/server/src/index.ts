@@ -68,6 +68,7 @@ interface CliOptions {
   generateToken: boolean
   dangerouslySkipAuth: boolean
   upgrade?: string | boolean
+  tunnelHubUrl?: string
 }
 
 const DEFAULT_HOST = "127.0.0.1"
@@ -131,6 +132,7 @@ function parseCliOptions(argv: string[]): CliOptions {
         .default(false),
     )
     .addOption(new Option("--upgrade [version]", "Upgrade the global CodeNomad CLI server package and exit"))
+    .addOption(new Option("--tunnel-hub-url <url>", "Tunnel hub URL for exposing local services").env("TUNNEL_HUB_URL"))
 
   program.parse(argv, { from: "user" })
   const parsed = program.opts<{
@@ -162,6 +164,7 @@ function parseCliOptions(argv: string[]): CliOptions {
     generateToken?: boolean
     dangerouslySkipAuth?: boolean
     upgrade?: string | boolean
+    tunnelHubUrl?: string
   }>()
 
   const upgrade = parsed.upgrade
@@ -218,6 +221,7 @@ function parseCliOptions(argv: string[]): CliOptions {
     generateToken: Boolean(parsed.generateToken),
     dangerouslySkipAuth: Boolean(parsed.dangerouslySkipAuth),
     upgrade,
+    tunnelHubUrl: parsed.tunnelHubUrl,
   }
 }
 
@@ -356,9 +360,11 @@ async function main() {
   const autoContinueManager = new AutoContinueManager(logger, workspaceManager)
   workspaceManager.autoContinueManager = autoContinueManager
   const crossSessionManager = new CrossSessionManager(logger, workspaceManager)
+  const configDoc = settings.getOwnerSync("config", "server")
+  const savedTunnelHubUrl = (configDoc as any)?.tunnelHubUrl as string | undefined
   const tunnelConfig = {
-    hubUrl: process.env.TUNNEL_HUB_URL || "",
-    enabled: !!process.env.TUNNEL_HUB_URL,
+    hubUrl: options.tunnelHubUrl || savedTunnelHubUrl || "",
+    enabled: !!(options.tunnelHubUrl || savedTunnelHubUrl),
   }
   const tunnelClient = new TunnelClient(tunnelConfig, logger)
   const instanceEventBridge = new InstanceEventBridge({

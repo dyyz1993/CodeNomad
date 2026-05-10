@@ -587,6 +587,17 @@ export const serverApi = {
       body: JSON.stringify(updates),
     })
   },
+
+  fetchTunnelStatus(): Promise<{ enabled: boolean; tunnelCount: number }> {
+    return request<{ enabled: boolean; tunnelCount: number }>("/api/tunnels/status")
+  },
+
+  testTunnelConnection(hubUrl: string): Promise<{ connected: boolean; hubUrl: string; error?: string; status?: any }> {
+    return request<{ connected: boolean; hubUrl: string; error?: string; status?: any }>("/api/tunnels/test-connection", {
+      method: "POST",
+      body: JSON.stringify({ hubUrl }),
+    })
+  },
 }
 
 function buildClientEventsUrl(identity: { clientId: string; connectionId: string }): string {
