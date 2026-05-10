@@ -615,6 +615,10 @@ export class WorkspaceManager {
     this.lastActivityTime.set(workspaceId, Date.now())
   }
 
+  isWorkspaceBusy(workspaceId: string): boolean {
+    return this.workspaceBusy.get(workspaceId) === true
+  }
+
   markBusy(workspaceId: string): void {
     this.workspaceBusy.set(workspaceId, true)
     this.recordActivity(workspaceId)

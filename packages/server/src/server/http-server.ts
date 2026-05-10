@@ -720,10 +720,18 @@ async function proxyWorkspaceRequest(args: {
       const errorCode = (error as NodeJS.ErrnoException)?.code
       const isConnectionRefused = errorCode === "ECONNREFUSED"
       if (isConnectionRefused) {
-        logger.warn({ workspaceId, targetUrl, err: error }, "Instance not yet accepting connections (ECONNREFUSED)")
+        logger.warn({ workspaceId, targetUrl, err: error }, "Instance not accepting connections (ECONNREFUSED)")
+        if (!workspaceManager.isWorkspaceBusy(workspaceId)) {
+          logger.info({ workspaceId }, "Triggering background recovery for stale workspace")
+          workspaceManager
+            .suspendWorkspace(workspaceId)
+            .then(() => workspaceManager.resumeWorkspace(workspaceId))
+            .then(() => logger.info({ workspaceId }, "Workspace recovered after ECONNREFUSED"))
+            .catch((e) => logger.warn({ workspaceId, err: e }, "Failed to recover workspace"))
+        }
         if (!proxyReply.sent) {
           proxyReply
-            .header("Retry-After", "2")
+            .header("Retry-After", "3")
             .code(503)
             .send({ error: "Workspace instance is starting, please retry" })
         }
