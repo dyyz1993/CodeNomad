@@ -130,6 +130,24 @@
     text-decoration: underline;
   }
 
+  .markdown-body a.tunnel-link {
+    color: var(--accent-primary);
+    cursor: pointer;
+    border-bottom: 1px dashed var(--accent-primary);
+    padding-bottom: 1px;
+    text-decoration: none;
+  }
+
+  .markdown-body a.tunnel-link:hover {
+    border-bottom-style: solid;
+    color: var(--accent-hover);
+  }
+
+  .markdown-body a.tunnel-link::before {
+    content: "\1F310\00A0";
+    font-size: 0.8em;
+  }
+
   .markdown-body code {
     font-family: var(--font-family-mono);
     font-size: var(--font-size-sm);

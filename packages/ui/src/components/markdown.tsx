@@ -205,6 +205,15 @@ export function Markdown(props: MarkdownProps) {
   onMount(() => {
     const handleClick = async (event: Event) => {
       const target = event.target as HTMLElement
+
+      const tunnelLink = target.closest("a.tunnel-link") as HTMLAnchorElement | null
+      if (tunnelLink?.dataset.tunnelUrl) {
+        event.preventDefault()
+        const { openTunnelViewer } = await import("../stores/tunnel")
+        openTunnelViewer(tunnelLink.dataset.tunnelUrl)
+        return
+      }
+
       const copyButton = target.closest(".code-block-copy") as HTMLButtonElement
 
       if (!copyButton) {

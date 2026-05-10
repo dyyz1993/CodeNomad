@@ -23,6 +23,7 @@ import { registerMetaRoutes } from "./routes/meta"
 import { registerEventRoutes } from "./routes/events"
 import { registerStorageRoutes } from "./routes/storage"
 import { registerPluginRoutes } from "./routes/plugin"
+import { registerTunnelRoutes } from "./routes/tunnel"
 import { registerBackgroundProcessRoutes } from "./routes/background-processes"
 import { registerWorktreeRoutes } from "./routes/worktrees"
 import { registerSpeechRoutes } from "./routes/speech"
@@ -42,6 +43,7 @@ import { VoiceModeManager } from "../plugins/voice-mode"
 import { CrossSessionManager } from "../plugins/cross-session"
 import type { SideCarManager } from "../sidecars/manager"
 import type { RemoteProxySessionManager } from "./remote-proxy"
+import type { TunnelClient } from "../tunnel/tunnel-client"
 
 interface HttpServerDeps {
   bindHost: string
@@ -65,6 +67,7 @@ interface HttpServerDeps {
   voiceModeManager: VoiceModeManager
   crossSessionManager: CrossSessionManager
   remoteProxySessionManager: RemoteProxySessionManager
+  tunnelClient?: TunnelClient
   uiStaticDir: string
   uiDevServerUrl?: string
   logger: Logger
@@ -329,6 +332,9 @@ export function createHttpServer(deps: HttpServerDeps) {
     autoContinueManager: deps.autoContinueManager,
   })
   registerBackgroundProcessRoutes(app, { backgroundProcessManager })
+  if (deps.tunnelClient?.enabled) {
+    registerTunnelRoutes(app, { tunnelClient: deps.tunnelClient })
+  }
   registerInstanceProxyRoutes(app, { workspaceManager: deps.workspaceManager, logger: proxyLogger })
 
   app.get("/api/health", async () => {

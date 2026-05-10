@@ -508,8 +508,8 @@ export async function renderMarkdown(
   escapeRawHtmlEnabled = escapeRawHtml
 
   try {
-    // Proceed to parse immediately - highlighting will be available on next render
-    return marked.parse(decoded) as Promise<string>
+    const raw = await (marked.parse(decoded) as Promise<string>)
+    return injectTunnelLinks(raw)
   } finally {
     highlightSuppressed = previousSuppressed
     escapeRawHtmlEnabled = previousEscapeRawHtml
@@ -518,4 +518,21 @@ export async function renderMarkdown(
 
 export async function getSharedHighlighter(): Promise<Highlighter> {
   return getOrCreateHighlighter()
+}
+
+const LOCAL_URL_PATTERN =
+  /(?:^|[^"'=>\w])(https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})(?::\d+)?(?:\/[^\s<>"')\]]*)?)/gi
+
+export function injectTunnelLinks(html: string): string {
+  return html.replace(LOCAL_URL_PATTERN, (match, url: string) => {
+    const matchStart = html.lastIndexOf(match)
+    if (matchStart === -1) return match
+    const before = html.substring(Math.max(0, matchStart - 80), matchStart)
+    if (before.includes("<a ") && !before.includes("</a>")) {
+      return match
+    }
+
+    const escaped = escapeHtml(url)
+    return `<a href="${escaped}" class="tunnel-link" data-tunnel-url="${escaped}" target="_blank" rel="noopener noreferrer">${escaped}</a>`
+  })
 }

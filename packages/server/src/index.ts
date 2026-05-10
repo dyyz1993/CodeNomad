@@ -32,6 +32,7 @@ import { VoiceModeManager } from "./plugins/voice-mode"
 import { runCliUpgrade } from "./cli-upgrade"
 import { AutoContinueManager } from "./workspaces/auto-continue"
 import { CrossSessionManager } from "./plugins/cross-session"
+import { TunnelClient } from "./tunnel/tunnel-client"
 
 const require = createRequire(import.meta.url)
 
@@ -355,6 +356,11 @@ async function main() {
   const autoContinueManager = new AutoContinueManager(logger, workspaceManager)
   workspaceManager.autoContinueManager = autoContinueManager
   const crossSessionManager = new CrossSessionManager(logger, workspaceManager)
+  const tunnelConfig = {
+    hubUrl: process.env.TUNNEL_HUB_URL || "",
+    enabled: !!process.env.TUNNEL_HUB_URL,
+  }
+  const tunnelClient = new TunnelClient(tunnelConfig, logger)
   const instanceEventBridge = new InstanceEventBridge({
     workspaceManager,
     eventBus,
@@ -460,6 +466,7 @@ async function main() {
         voiceModeManager,
         crossSessionManager,
         remoteProxySessionManager,
+        tunnelClient,
         uiStaticDir: uiResolution.uiStaticDir ?? DEFAULT_UI_STATIC_DIR,
         uiDevServerUrl: uiResolution.uiDevServerUrl,
         logger,
@@ -488,6 +495,7 @@ async function main() {
         voiceModeManager,
         crossSessionManager,
         remoteProxySessionManager,
+        tunnelClient,
         uiStaticDir: uiResolution.uiStaticDir ?? DEFAULT_UI_STATIC_DIR,
         uiDevServerUrl: undefined,
         logger,
@@ -596,6 +604,12 @@ async function main() {
         clientConnectionManager.shutdown()
       } catch (error) {
         logger.warn({ err: error }, "Client connection manager shutdown failed")
+      }
+
+      try {
+        await tunnelClient.dispose()
+      } catch (error) {
+        logger.warn({ err: error }, "Tunnel client shutdown failed")
       }
 
       try {
