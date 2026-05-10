@@ -718,15 +718,24 @@ async function proxyWorkspaceRequest(args: {
     },
     onError: (proxyReply, { error }) => {
       const errorCode = (error as NodeJS.ErrnoException)?.code
-      const isConnectionRefused = errorCode === "ECONNREFUSED"
-      if (isConnectionRefused) {
-        logger.warn({ workspaceId, targetUrl, err: error }, "Instance not accepting connections (ECONNREFUSED)")
+      const errorName = error?.name || ""
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      const isConnectionError =
+        errorCode === "ECONNREFUSED" ||
+        errorCode === "ECONNRESET" ||
+        errorCode === "ETIMEDOUT" ||
+        errorCode === "EPIPE" ||
+        errorName.includes("SocketError") ||
+        errorMsg.includes("Socket Error") ||
+        errorMsg.includes("UndiciSocketError")
+
+      if (isConnectionError) {
+        logger.warn({ workspaceId, targetUrl, errorCode, errorName, err: errorMsg }, "Instance connection error, triggering recovery")
         if (!workspaceManager.isWorkspaceBusy(workspaceId)) {
-          logger.info({ workspaceId }, "Triggering background recovery for stale workspace")
           workspaceManager
             .suspendWorkspace(workspaceId)
             .then(() => workspaceManager.resumeWorkspace(workspaceId))
-            .then(() => logger.info({ workspaceId }, "Workspace recovered after ECONNREFUSED"))
+            .then(() => logger.info({ workspaceId }, "Workspace recovered after connection error"))
             .catch((e) => logger.warn({ workspaceId, err: e }, "Failed to recover workspace"))
         }
         if (!proxyReply.sent) {

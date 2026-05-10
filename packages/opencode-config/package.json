@@ -1,6 +1,6 @@
 {
   "name": "@codenomad/opencode-config",
-  "version": "0.15.25",
+  "version": "0.15.26",
   "private": true,
   "license": "MIT",
   "dependencies": {
