@@ -1,149 +1,56 @@
 # CodeNomad - Development Progress
 
-## Completed Tasks
+## Version: 0.15.27 (dev branch)
 
-### Task 001: Project Setup ✅
-- Set up Electron + SolidJS + Vite + TypeScript
-- Configured TailwindCSS v3 (downgraded from v4 for electron-vite compatibility)
-- Build pipeline with electron-vite
-- Application window management
-- Application menu with keyboard shortcuts
+## Completed (0.15.11 - 0.15.27)
 
-### Task 002: Empty State UI & Folder Selection ✅
-- Empty state component with styled UI
-- Native folder picker integration
-- IPC handlers for folder selection
-- UI state management with SolidJS signals
-- Loading states with spinner
-- Keyboard shortcuts (Cmd/Ctrl+N)
+- [x] **0.15.11** Fork + npm publish + CI workflows
+- [x] **0.15.12** Fix: 消息消失（禁用过度 eviction）
+- [x] **0.15.13** Fix: tab 拖拽敏感度（自定义传感器 500ms/20px）
+- [x] **0.15.14** Fix: 模型选择器移动端适配（fitViewport + min-width）
+- [x] **0.15.15** Fix: 禁用启动时自动恢复 workspace
+- [x] **0.15.16** Fix: tab 指示灯状态不更新（compacting guard + SSE 重连刷新）
+- [x] **0.15.17** Fix: workspace resume 后 SDK 客户端重建 + idle 30 分钟
+- [x] **0.15.18** Fix: loadMessages 自动恢复 session
+- [x] **0.15.19** Fix: SSE 事件流中断 + client null + resume 错误提示 + fetchSessions 恢复
+- [x] **0.15.20** Fix: SSE 重连去重 + hydrate 去重 + session.deleted + batch() + resume 回滚 + SSE 流竞态
+- [x] **0.15.21** Test: 84 个单元测试 + CI 集成测试修复 + test script
+- [x] **0.15.22** Test: 新增 auth/connection/event 单元测试（123 个） + CI 集成测试扩展
+- [x] **0.15.23** Fix: 全局 error handler + 异步 IO + 空 catch 日志 + /api/health
+- [x] **0.15.24** Fix: workspace 未就绪时代理等待（waitForInstanceReady）
+- [x] **0.15.25** Fix: ECONNREFUSED 自动恢复（suspend + resume）
+- [x] **0.15.26** Fix: 所有 socket 错误（UndiciSocketError 等）都触发恢复
+- [x] **0.15.27** Feat: Auto-Continue 自动续跑（服务端监听 + 5 秒确认 + prompt_async）
 
-### Task 003: Process Manager ✅
-- Process spawning: `opencode serve --port 0`
-- Port detection from stdout (regex: `opencode server listening on http://...`)
-- Process lifecycle management (spawn, kill, cleanup)
-- IPC communication for instance management
-- Instance state tracking (starting → ready → stopped/error)
-- Auto-cleanup on app quit
-- Error handling & timeout protection (10s)
-- Graceful shutdown (SIGTERM → SIGKILL)
+## In Progress
 
-### Task 004: SDK Integration ✅
-- Installed `@opencode-ai/sdk` package
-- SDK manager for client lifecycle
-- Session fetching from OpenCode server
-- Agent fetching (`client.app.agents()`)
-- Provider fetching (`client.config.providers()`)
-- Session store with SolidJS signals
-- Instance store updated with SDK client
-- Loading states for async operations
-- Error handling for network failures
+- [ ] **0.15.28** Feat: 跨会话通信（Cross-Session Messaging）
+  - [ ] Server 端: `packages/server/src/plugins/cross-session.ts` — 跨 workspace 查找 + prompt_async 转发
+  - [ ] Plugin 端: `packages/opencode-config/plugin/lib/cross-session.ts` — list_sessions + send_message 工具
+  - [ ] 注册工具到插件 + 注册路由到 HTTP server
+  - [ ] Auto-Continue 测试补充
+  - [ ] 跨会话通信测试
 
-### Task 005: Session Picker Modal ✅
-- Modal dialog with Kobalte Dialog
-- Lists ALL existing sessions (scrollable)
-- Session metadata display (title, relative timestamp)
-- Native HTML select dropdown for agents
-- Auto-selects first agent by default
-- Create new session with selected agent
-- Cancel button stops instance and closes modal
-- Resume session on click
-- Empty state for no sessions
-- Loading state for agents
-- Keyboard navigation (Escape to cancel)
+## Backlog
 
-## Current State
+- [ ] Dockerfile + docker-compose
+- [ ] E2E tests (Playwright)
+- [ ] 超大文件拆分（6 个 >1000 行）
 
-**Working Features:**
-- ✅ App launches with empty state
-- ✅ Folder selection via native dialog
-- ✅ OpenCode server spawning per folder
-- ✅ Port extraction and process tracking
-- ✅ SDK client connection to running servers
-- ✅ Session list fetching and display
-- ✅ Agent and provider data fetching
-- ✅ Session picker modal on instance creation
-- ✅ Resume existing sessions
-- ✅ Create new sessions with agent selection
+## CI Status
 
-**File Structure:**
-```
-packages/opencode-client/
-├── electron/
-│   ├── main/
-│   │   ├── main.ts (window + IPC setup)
-│   │   ├── menu.ts (app menu)
-│   │   ├── ipc.ts (instance IPC handlers)
-│   │   └── process-manager.ts (server spawning)
-│   └── preload/
-│       └── index.ts (IPC bridge)
-├── src/
-│   ├── components/
-│   │   ├── empty-state.tsx
-│   │   └── session-picker.tsx
-│   ├── lib/
-│   │   └── sdk-manager.ts
-│   ├── stores/
-│   │   ├── ui.ts
-│   │   ├── instances.ts
-│   │   └── sessions.ts
-│   ├── types/
-│   │   ├── electron.d.ts
-│   │   ├── instance.ts
-│   │   └── session.ts
-│   └── App.tsx
-├── tasks/
-│   ├── done/ (001-005)
-│   └── todo/ (006+)
-└── docs/
-```
+- **test-fixed-port**: 启动 + 登录 + Auth lifecycle + Workspace API + SSE
+- **test-port-fallback**: 端口回退 + 登录
+- **build-test**: Build + TypeCheck + 123 个单元测试
+- **report**: 汇总 + 自动创建 Issue
 
-## Next Steps
+## Test Stats
 
-### Task 006: Message Stream UI (NEXT)
-- Message display component
-- User/assistant message rendering
-- Markdown support with syntax highlighting
-- Tool use visualization
-- Auto-scroll behavior
+- Server: 105 tests (27 suites)
+- UI: 18 tests (7 suites)
+- Total: 123 tests, 0 failures
 
-### Task 007: Prompt Input
-- Text input with multi-line support
-- Send button
-- File attachment support
-- Keyboard shortcuts (Enter for new line; Cmd+Enter/Ctrl+Enter to send)
+## KB References
 
-### Task 008: Instance Tabs
-- Tab bar for multiple instances
-- Switch between instances
-- Close instance tabs
-- "+" button for new instance
-
-## Build & Test
-
-```bash
-cd packages/opencode-client
-bun run build
-bunx electron .
-```
-
-**Known Issue:**
-- Dev mode (`bun dev`) fails due to Bun workspace hoisting + electron-vite
-- Workaround: Use production builds for testing
-
-## Dependencies
-
-- Electron 38
-- SolidJS 1.8
-- TailwindCSS 3.x
-- @opencode-ai/sdk
-- @kobalte/core (Dialog)
-- Vite 5
-- TypeScript 5
-
-## Stats
-
-- **Tasks completed:** 5/5 (Phase 1)
-- **Files created:** 18+
-- **Lines of code:** ~1500+
-- **Build time:** ~7s
-- **Bundle size:** 152KB (renderer)
+- [需求：跨会话通信](kb_read:r9t4svnlvt)
+- [需求：自动续跑](kb_read:v2ni4a4quu)

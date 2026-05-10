@@ -1,6 +1,7 @@
 import type { PluginInput } from "@opencode-ai/plugin"
 import { createCodeNomadClient, getCodeNomadConfig } from "./lib/client"
 import { createBackgroundProcessTools } from "./lib/background-process"
+import { createCrossSessionTools } from "./lib/cross-session"
 
 let voiceModeEnabled = false
 
@@ -8,6 +9,7 @@ export async function CodeNomadPlugin(input: PluginInput) {
   const config = getCodeNomadConfig()
   const client = createCodeNomadClient(config)
   const backgroundProcessTools = createBackgroundProcessTools(config, { baseDir: input.directory })
+  const crossSessionTools = createCrossSessionTools(config)
 
   await client.startEvents((event) => {
     if (event.type === "codenomad.ping") {
@@ -29,6 +31,7 @@ export async function CodeNomadPlugin(input: PluginInput) {
   return {
     tool: {
       ...backgroundProcessTools,
+      ...crossSessionTools,
     },
     async "chat.message"(_input: { sessionID: string }, output: { message: { system?: string } }) {
       if (!voiceModeEnabled) {

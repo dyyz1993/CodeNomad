@@ -39,6 +39,7 @@ import type { SpeechService } from "../speech/service"
 import { ClientConnectionManager } from "../clients/connection-manager"
 import { PluginChannelManager } from "../plugins/channel"
 import { VoiceModeManager } from "../plugins/voice-mode"
+import { CrossSessionManager } from "../plugins/cross-session"
 import type { SideCarManager } from "../sidecars/manager"
 import type { RemoteProxySessionManager } from "./remote-proxy"
 
@@ -62,6 +63,7 @@ interface HttpServerDeps {
   clientConnectionManager: ClientConnectionManager
   pluginChannel: PluginChannelManager
   voiceModeManager: VoiceModeManager
+  crossSessionManager: CrossSessionManager
   remoteProxySessionManager: RemoteProxySessionManager
   uiStaticDir: string
   uiDevServerUrl?: string
@@ -314,6 +316,7 @@ export function createHttpServer(deps: HttpServerDeps) {
     logger: proxyLogger,
     channel: deps.pluginChannel,
     voiceModeManager: deps.voiceModeManager,
+    crossSessionManager: deps.crossSessionManager,
   })
   registerBackgroundProcessRoutes(app, { backgroundProcessManager })
   registerInstanceProxyRoutes(app, { workspaceManager: deps.workspaceManager, logger: proxyLogger })

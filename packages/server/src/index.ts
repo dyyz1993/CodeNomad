@@ -31,6 +31,7 @@ import { PluginChannelManager } from "./plugins/channel"
 import { VoiceModeManager } from "./plugins/voice-mode"
 import { runCliUpgrade } from "./cli-upgrade"
 import { AutoContinueManager } from "./workspaces/auto-continue"
+import { CrossSessionManager } from "./plugins/cross-session"
 
 const require = createRequire(import.meta.url)
 
@@ -352,6 +353,7 @@ async function main() {
     logger: logger.child({ component: "sidecars" }),
   })
   const autoContinueManager = new AutoContinueManager(logger, workspaceManager)
+  const crossSessionManager = new CrossSessionManager(logger, workspaceManager)
   const instanceEventBridge = new InstanceEventBridge({
     workspaceManager,
     eventBus,
@@ -455,6 +457,7 @@ async function main() {
         clientConnectionManager,
         pluginChannel,
         voiceModeManager,
+        crossSessionManager,
         remoteProxySessionManager,
         uiStaticDir: uiResolution.uiStaticDir ?? DEFAULT_UI_STATIC_DIR,
         uiDevServerUrl: uiResolution.uiDevServerUrl,
@@ -482,6 +485,7 @@ async function main() {
         clientConnectionManager,
         pluginChannel,
         voiceModeManager,
+        crossSessionManager,
         remoteProxySessionManager,
         uiStaticDir: uiResolution.uiStaticDir ?? DEFAULT_UI_STATIC_DIR,
         uiDevServerUrl: undefined,

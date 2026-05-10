@@ -7,6 +7,7 @@ import type { Logger } from "../../logger"
 import { PluginChannelManager } from "../../plugins/channel"
 import { buildPingEvent, handlePluginEvent } from "../../plugins/handlers"
 import { VoiceModeManager } from "../../plugins/voice-mode"
+import type { CrossSessionManager } from "../../plugins/cross-session"
 
 interface RouteDeps {
   workspaceManager: WorkspaceManager
@@ -14,6 +15,7 @@ interface RouteDeps {
   logger: Logger
   channel: PluginChannelManager
   voiceModeManager: VoiceModeManager
+  crossSessionManager: CrossSessionManager
 }
 
 const PluginEventSchema = z.object({
@@ -78,6 +80,48 @@ export function registerPluginRoutes(app: FastifyInstance, deps: RouteDeps) {
     }
 
     return { enabled: payload.enabled }
+  })
+
+  app.get<{ Params: { id: string } }>("/workspaces/:id/plugin/cross-session/sessions", async (request, reply) => {
+    const workspace = deps.workspaceManager.get(request.params.id)
+    if (!workspace) {
+      reply.code(404).send({ error: "Workspace not found" })
+      return
+    }
+
+    const sessions = await deps.crossSessionManager.listAllSessions()
+    return { sessions }
+  })
+
+  const SendMessageSchema = z.object({
+    targetSessionId: z.string().min(1),
+    targetWorkspaceId: z.string().optional(),
+    message: z.string().min(1),
+    sourceSessionId: z.string().min(1),
+    sourceWorkspaceId: z.string().min(1),
+    sourceProjectPath: z.string().optional(),
+  })
+
+  app.post<{ Params: { id: string }; Body: any }>("/workspaces/:id/plugin/cross-session/send-message", async (request, reply) => {
+    const workspace = deps.workspaceManager.get(request.params.id)
+    if (!workspace) {
+      reply.code(404).send({ error: "Workspace not found" })
+      return
+    }
+
+    const parsed = SendMessageSchema.safeParse(request.body ?? {})
+    if (!parsed.success) {
+      reply.code(400).send({ error: "Invalid request", details: parsed.error.issues })
+      return
+    }
+
+    const result = await deps.crossSessionManager.sendMessage(parsed.data)
+    if (!result.success) {
+      reply.code(422).send({ error: result.error })
+      return
+    }
+
+    return result
   })
 
   const handleWildcard = async (request: any, reply: any) => {
