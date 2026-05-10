@@ -4,9 +4,13 @@ import type { SetStoreFunction } from "solid-js/store"
 import { getLogger } from "../../lib/logger"
 import type { ClientPart, MessageInfo } from "../../types/message"
 import { clearRecordDisplayCacheForMessages } from "./record-display-cache"
+import { ensurePartId, clonePart } from "./part-helpers"
+import { createEmptyUsageState, extractUsageEntry, applyUsageState, removeUsageEntry, rebuildUsageStateFromInfos } from "./usage-helpers"
+import { createPermissionOps } from "./permission-ops"
+import { createQuestionOps } from "./question-ops"
+import { createTodoOps } from "./todo-ops"
 import type {
   InstanceMessageState,
-  LatestTodoSnapshot,
   MessageRecord,
   MessageUpsertInput,
   PartUpdateInput,
@@ -18,7 +22,6 @@ import type {
   SessionRecord,
   SessionUpsertInput,
   SessionUsageState,
-  UsageEntry,
 } from "./types"
 
 const storeLog = getLogger("session")
@@ -56,33 +59,7 @@ function createInitialState(instanceId: string): InstanceMessageState {
   }
 }
 
-function ensurePartId(messageId: string, part: ClientPart, index: number): string {
-  if (typeof part.id === "string" && part.id.length > 0) {
-    return part.id
-  }
-
-  if (part.type === "tool") {
-    part.id = `tool-fallback-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    return part.id
-  }
-
-  const fallbackId = `${messageId}-part-${index}`
-  part.id = fallbackId
-  return fallbackId
-}
-
 const PENDING_PART_MAX_AGE_MS = 30_000
-
-function clonePart(part: ClientPart): ClientPart {
-  // Cloning is intentionally disabled; message parts
-  // are stored as received from the backend.
-  return part
-}
-
-function cloneStructuredValue<T>(value: T): T {
-  // Legacy helper kept as a no-op to avoid deep copies.
-  return value
-}
 
 function areMessageIdListsEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) {
@@ -94,96 +71,6 @@ function areMessageIdListsEqual(a: string[], b: string[]): boolean {
     }
   }
   return true
-}
-
-function createEmptyUsageState(): SessionUsageState {
-  return {
-    entries: {},
-    totalInputTokens: 0,
-    totalOutputTokens: 0,
-    totalReasoningTokens: 0,
-    totalCost: 0,
-    actualUsageTokens: 0,
-    latestMessageId: undefined,
-  }
-}
-
-function extractUsageEntry(info: MessageInfo | undefined): UsageEntry | null {
-  if (!info || info.role !== "assistant") return null
-  const messageId = typeof info.id === "string" ? info.id : undefined
-  if (!messageId) return null
-  const tokens = info.tokens
-  if (!tokens) return null
-  const inputTokens = tokens.input ?? 0
-  const outputTokens = tokens.output ?? 0
-  const reasoningTokens = tokens.reasoning ?? 0
-  const cacheReadTokens = tokens.cache?.read ?? 0
-  const cacheWriteTokens = tokens.cache?.write ?? 0
-  if (inputTokens === 0 && outputTokens === 0 && reasoningTokens === 0 && cacheReadTokens === 0 && cacheWriteTokens === 0) {
-    return null
-  }
-  const combinedTokens = info.summary ? outputTokens : inputTokens + cacheReadTokens + cacheWriteTokens + outputTokens + reasoningTokens
-  return {
-    messageId,
-    inputTokens,
-    outputTokens,
-    reasoningTokens,
-    cacheReadTokens,
-    cacheWriteTokens,
-    combinedTokens,
-    cost: info.cost ?? 0,
-    timestamp: info.time?.created ?? 0,
-    hasContextUsage: inputTokens + cacheReadTokens + cacheWriteTokens > 0,
-  }
-}
-
-function applyUsageState(state: SessionUsageState, entry: UsageEntry | null) {
-  if (!entry) return
-  state.entries[entry.messageId] = entry
-  state.totalInputTokens += entry.inputTokens
-  state.totalOutputTokens += entry.outputTokens
-  state.totalReasoningTokens += entry.reasoningTokens
-  state.totalCost += entry.cost
-  if (!state.latestMessageId || entry.timestamp >= (state.entries[state.latestMessageId]?.timestamp ?? 0)) {
-    state.latestMessageId = entry.messageId
-    state.actualUsageTokens = entry.combinedTokens
-  }
-}
-
-function removeUsageEntry(state: SessionUsageState, messageId: string | undefined) {
-  if (!messageId) return
-  const existing = state.entries[messageId]
-  if (!existing) return
-  state.totalInputTokens -= existing.inputTokens
-  state.totalOutputTokens -= existing.outputTokens
-  state.totalReasoningTokens -= existing.reasoningTokens
-  state.totalCost -= existing.cost
-  delete state.entries[messageId]
-  if (state.latestMessageId === messageId) {
-    state.latestMessageId = undefined
-    state.actualUsageTokens = 0
-    let latest: UsageEntry | null = null
-    for (const candidate of Object.values(state.entries) as UsageEntry[]) {
-      if (!latest || candidate.timestamp >= latest.timestamp) {
-        latest = candidate
-      }
-    }
-    if (latest) {
-      state.latestMessageId = latest.messageId
-      state.actualUsageTokens = latest.combinedTokens
-    }
-  }
-}
-
-function rebuildUsageStateFromInfos(infos: Iterable<MessageInfo>): SessionUsageState {
-  const usageState = createEmptyUsageState()
-  for (const info of infos) {
-    const entry = extractUsageEntry(info)
-    if (entry) {
-      applyUsageState(usageState, entry)
-    }
-  }
-  return usageState
 }
 
 export interface InstanceMessageStore {
@@ -224,11 +111,9 @@ export interface InstanceMessageStore {
   getSessionRevision: (sessionId: string) => number
   getSessionMessageIds: (sessionId: string) => string[]
   getLastAssistantMessageId: (sessionId: string) => string | undefined
-  // Index of the most recent message in the session that contains a compaction part.
-  // Returns -1 if there has been no compaction.
   getLastCompactionMessageIndex: (sessionId: string) => number
   getMessage: (messageId: string) => MessageRecord | undefined
-  getLatestTodoSnapshot: (sessionId: string) => LatestTodoSnapshot | undefined
+  getLatestTodoSnapshot: (sessionId: string) => InstanceMessageState["latestTodos"][string]
   clearSession: (sessionId: string) => void
   clearInstance: () => void
   clearMessages: () => void
@@ -237,10 +122,12 @@ export interface InstanceMessageStore {
 export function createInstanceMessageStore(instanceId: string, hooks?: MessageStoreHooks): InstanceMessageStore {
   const [state, setState] = createStore<InstanceMessageState>(createInitialState(instanceId))
 
-  const TODO_TOOL_NAME = "todowrite"
-
   const messageInfoCache = new Map<string, MessageInfo>()
   let messageInfoCacheCounter = 0
+
+  const permissionOps = createPermissionOps(state, setState)
+  const questionOps = createQuestionOps(state, setState)
+  const todoOps = createTodoOps(state, setState)
 
   function findLastAssistantMessageId(messageIds: readonly string[]): string | undefined {
     for (let index = messageIds.length - 1; index >= 0; index -= 1) {
@@ -260,7 +147,6 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
   function getLastCompactionMessageIndex(sessionId: string): number {
     if (!sessionId) return -1
     const ids = state.sessions[sessionId]?.messageIds ?? []
-    // Scan from the end: we only care about the most recent compaction.
     for (let i = ids.length - 1; i >= 0; i--) {
       const messageId = ids[i]
       const record = state.messages[messageId]
@@ -273,51 +159,6 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
       }
     }
     return -1
-  }
-
-  function isCompletedTodoPart(part: ClientPart | undefined): boolean {
-    if (!part || (part as any).type !== "tool") {
-      return false
-    }
-    const toolName = typeof (part as any).tool === "string" ? (part as any).tool : ""
-    if (toolName !== TODO_TOOL_NAME) {
-      return false
-    }
-    const toolState = (part as any).state
-    if (!toolState || typeof toolState !== "object") {
-      return false
-    }
-    return (toolState as { status?: string }).status === "completed"
-  }
-
-  function recordLatestTodoSnapshot(sessionId: string, snapshot: LatestTodoSnapshot) {
-    if (!sessionId) return
-    setState("latestTodos", sessionId, (existing) => {
-      if (existing && existing.timestamp > snapshot.timestamp) {
-        return existing
-      }
-      return snapshot
-    })
-  }
-
-  function maybeUpdateLatestTodoFromRecord(record: MessageRecord | undefined) {
-    if (!record || !Array.isArray(record.partIds) || record.partIds.length === 0) {
-      return
-    }
-    for (let index = record.partIds.length - 1; index >= 0; index -= 1) {
-      const partId = record.partIds[index]
-      const partRecord = record.parts[partId]
-      if (!partRecord) continue
-      if (isCompletedTodoPart(partRecord.data)) {
-        const timestamp = typeof record.updatedAt === "number" ? record.updatedAt : Date.now()
-        recordLatestTodoSnapshot(record.sessionId, { messageId: record.id, partId, timestamp })
-        break
-      }
-    }
-  }
-
-  function clearLatestTodoSnapshot(sessionId: string) {
-    setState("latestTodos", sessionId, undefined)
   }
 
   function bumpSessionRevision(sessionId: string) {
@@ -483,7 +324,7 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
       recomputeLastAssistantMessageId(sessionId, incomingIds)
 
       Object.values(normalizedRecords).forEach((record) => {
-        maybeUpdateLatestTodoFromRecord(record)
+        todoOps.maybeUpdateLatestTodoFromRecord(record)
       })
 
       bumpSessionRevision(sessionId)
@@ -587,7 +428,7 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
     })
 
     if (nextRecord) {
-      maybeUpdateLatestTodoFromRecord(nextRecord)
+      todoOps.maybeUpdateLatestTodoFromRecord(nextRecord)
     }
 
     insertMessageIntoSession(input.sessionId, input.id)
@@ -648,52 +489,6 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
     })
   }
 
-  function rebindPermissionForPart(messageId: string, partId: string, part: ClientPart) {
-    if (!messageId || !partId || part.type !== "tool") {
-      return
-    }
-
-    const toolCallId =
-      (part as any).callID ??
-      (part as any).callId ??
-      (part as any).toolCallID ??
-      (part as any).toolCallId ??
-      undefined
-    if (!toolCallId) {
-      return
-    }
-
-    setState(
-      "permissions",
-      "byMessage",
-      messageId,
-      produce((draft) => {
-        if (!draft) return
-        const existing = draft[partId]
-        for (const [key, entry] of Object.entries(draft)) {
-          if (!entry || entry.partId) continue
-          const permissionCallId =
-            (entry.permission as any).tool?.callID ??
-            (entry.permission as any).tool?.callId ??
-            (entry.permission as any).callID ??
-            (entry.permission as any).callId ??
-            (entry.permission as any).toolCallID ??
-            (entry.permission as any).toolCallId ??
-            (entry.permission as any).metadata?.callID ??
-            (entry.permission as any).metadata?.callId ??
-            undefined
-          if (permissionCallId !== toolCallId) continue
-          if (!existing || existing.permission.id === entry.permission.id) {
-            entry.partId = partId
-            draft[partId] = entry
-            delete draft[key]
-          }
-          break
-        }
-      }),
-    )
-  }
-
   function applyPartUpdate(input: PartUpdateInput) {
     const message = state.messages[input.messageId]
     if (!message) {
@@ -725,18 +520,16 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
       }),
     )
 
-    rebindPermissionForPart(input.messageId, partId, cloned)
+    permissionOps.rebindPermissionForPart(input.messageId, partId, cloned)
 
-    if (isCompletedTodoPart(cloned)) {
-      recordLatestTodoSnapshot(message.sessionId, {
+    if (todoOps.isCompletedTodoPart(cloned)) {
+      todoOps.recordLatestTodoSnapshot(message.sessionId, {
         messageId: input.messageId,
         partId,
         timestamp: Date.now(),
       })
     }
-  
-    // Any part update can change the rendered height of the message
-    // list, so we treat it as a session revision for scroll purposes.
+
     bumpSessionRevision(message.sessionId)
   }
 
@@ -754,7 +547,6 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
 
     const message = state.messages[input.messageId]
     if (!message) {
-      // Best-effort: drop deltas for unknown messages.
       return
     }
 
@@ -842,7 +634,7 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
       sessionIds.forEach((sessionId) => {
         withUsageState(sessionId, (draft) => removeUsageEntry(draft, messageId))
         if (state.latestTodos[sessionId]?.messageId === messageId) {
-          clearLatestTodoSnapshot(sessionId)
+          todoOps.clearLatestTodoSnapshot(sessionId)
         }
         recomputeLastAssistantMessageId(sessionId)
         bumpSessionRevision(sessionId)
@@ -986,7 +778,7 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
       setState("pendingParts", options.newId, pending)
     }
     clearPendingPartsForMessage(options.oldId)
-    maybeUpdateLatestTodoFromRecord(cloned)
+    todoOps.maybeUpdateLatestTodoFromRecord(cloned)
   }
 
   function setMessageInfo(messageId: string, info: MessageInfo) {
@@ -1013,114 +805,6 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
   function getMessageInfo(messageId: string) {
     void state.messageInfoVersion[messageId]
     return messageInfoCache.get(messageId)
-  }
-
-  function upsertPermission(entry: PermissionEntry) {
-    const messageKey = entry.messageId ?? "__global__"
-    const partKey = entry.partId ?? entry.permission?.id ?? "__global__"
-
-    setState(
-      "permissions",
-      produce((draft) => {
-        draft.byMessage[messageKey] = draft.byMessage[messageKey] ?? {}
-        draft.byMessage[messageKey][partKey] = entry
-        const existingIndex = draft.queue.findIndex((item) => item.permission.id === entry.permission.id)
-        if (existingIndex === -1) {
-          draft.queue.push(entry)
-        } else {
-          draft.queue[existingIndex] = entry
-        }
-        if (!draft.active || draft.active.permission.id === entry.permission.id) {
-          draft.active = entry
-        }
-      }),
-    )
-  }
-
-  function removePermission(permissionId: string) {
-    setState(
-      "permissions",
-      produce((draft) => {
-        draft.queue = draft.queue.filter((item) => item.permission.id !== permissionId)
-        if (draft.active?.permission.id === permissionId) {
-          draft.active = draft.queue[0] ?? null
-        }
-        Object.keys(draft.byMessage).forEach((messageKey) => {
-          const partEntries = draft.byMessage[messageKey]
-          Object.keys(partEntries).forEach((partKey) => {
-            if (partEntries[partKey].permission.id === permissionId) {
-              delete partEntries[partKey]
-            }
-          })
-          if (Object.keys(partEntries).length === 0) {
-            delete draft.byMessage[messageKey]
-          }
-        })
-      }),
-    )
-  }
-
-  function getPermissionState(messageId?: string, partId?: string) {
-    const messageKey = messageId ?? "__global__"
-    const partKey = partId ?? "__global__"
-    const entry = state.permissions.byMessage[messageKey]?.[partKey]
-    if (!entry) return null
-    const active = state.permissions.active?.permission.id === entry.permission.id
-    return { entry, active }
-  }
-
-  function upsertQuestion(entry: QuestionEntry) {
-    const messageKey = entry.messageId ?? "__global__"
-    const partKey = entry.partId ?? entry.request?.id ?? "__global__"
-
-    setState(
-      "questions",
-      produce((draft) => {
-        draft.byMessage[messageKey] = draft.byMessage[messageKey] ?? {}
-        draft.byMessage[messageKey][partKey] = entry
-        const existingIndex = draft.queue.findIndex((item) => item.request.id === entry.request.id)
-        if (existingIndex === -1) {
-          draft.queue.push(entry)
-        } else {
-          draft.queue[existingIndex] = entry
-        }
-        if (!draft.active || draft.active.request.id === entry.request.id) {
-          draft.active = entry
-        }
-      }),
-    )
-  }
-
-  function removeQuestion(requestId: string) {
-    setState(
-      "questions",
-      produce((draft) => {
-        draft.queue = draft.queue.filter((item) => item.request.id !== requestId)
-        if (draft.active?.request.id === requestId) {
-          draft.active = draft.queue[0] ?? null
-        }
-        Object.keys(draft.byMessage).forEach((messageKey) => {
-          const partEntries = draft.byMessage[messageKey]
-          Object.keys(partEntries).forEach((partKey) => {
-            if (partEntries[partKey].request.id === requestId) {
-              delete partEntries[partKey]
-            }
-          })
-          if (Object.keys(partEntries).length === 0) {
-            delete draft.byMessage[messageKey]
-          }
-        })
-      }),
-    )
-  }
-
-  function getQuestionState(messageId?: string, partId?: string) {
-    const messageKey = messageId ?? "__global__"
-    const partKey = partId ?? "__global__"
-    const entry = state.questions.byMessage[messageKey]?.[partKey]
-    if (!entry) return null
-    const active = state.questions.active?.request.id === entry.request.id
-    return { entry, active }
   }
 
   function pruneMessagesAfterRevert(sessionId: string, revertMessageId: string) {
@@ -1215,10 +899,10 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
     const messageIds = Object.values(state.messages)
       .filter((record) => record.sessionId === sessionId)
       .map((record) => record.id)
- 
+
     storeLog.info("Clearing session data", { instanceId, sessionId, messageCount: messageIds.length })
     clearRecordDisplayCacheForMessages(instanceId, messageIds)
- 
+
     batch(() => {
       setState("messages", (prev) => {
         const next = { ...prev }
@@ -1303,12 +987,12 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
       setState("messageOrder", (prev: string[]) => prev.filter((id) => !messageIds.includes(id)))
     })
 
-    clearLatestTodoSnapshot(sessionId)
- 
+    todoOps.clearLatestTodoSnapshot(sessionId)
+
     hooks?.onSessionCleared?.(instanceId, sessionId)
   }
 
- 
+
    function clearInstance() {
      messageInfoCache.clear()
       setState(reconcile(createInitialState(instanceId)))
@@ -1347,7 +1031,7 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
        hooks?.onSessionCleared?.(instanceId, sessionId)
      }
    }
- 
+
      return {
 
      instanceId,
@@ -1365,12 +1049,12 @@ export function createInstanceMessageStore(instanceId: string, hooks?: MessageSt
      replaceMessageId,
      setMessageInfo,
      getMessageInfo,
-      upsertPermission,
-      removePermission,
-      getPermissionState,
-      upsertQuestion,
-      removeQuestion,
-      getQuestionState,
+      upsertPermission: permissionOps.upsertPermission,
+      removePermission: permissionOps.removePermission,
+      getPermissionState: permissionOps.getPermissionState,
+      upsertQuestion: questionOps.upsertQuestion,
+      removeQuestion: questionOps.removeQuestion,
+      getQuestionState: questionOps.getQuestionState,
 
      setSessionRevert,
      getSessionRevert,

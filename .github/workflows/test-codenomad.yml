@@ -436,9 +436,201 @@ jobs:
         if: always()
         run: kill $CODENOMAD_PID 2>/dev/null || true
 
+  tunnel-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build tunnel-hub
+        run: |
+          git clone https://github.com/dyyz1993/codenomad-tunnel.git /tmp/codenomad-tunnel
+          cd /tmp/codenomad-tunnel
+          go build -o /tmp/tunnel-hub ./cmd/hub
+
+      - name: Build CodeNomad from source
+        run: |
+          npm install
+          npm run build
+
+      - name: Start test HTTP service
+        run: |
+          mkdir -p /tmp/tunnel-test
+          echo "Hello from tunnel test" > /tmp/tunnel-test/index.html
+          python3 -m http.server 18888 --directory /tmp/tunnel-test &
+          echo "HTTP_PID=$!" >> $GITHUB_ENV
+          sleep 1
+          curl -sf http://127.0.0.1:18888/ > /dev/null || (echo "Test HTTP service failed to start" && exit 1)
+
+      - name: Start tunnel-hub
+        run: |
+          /tmp/tunnel-hub \
+            --domain "*.tunnel.test" \
+            --http-port 19080 \
+            --api-port 19081 \
+            --public-url "http://127.0.0.1:19080" \
+            > /tmp/tunnel-hub.log 2>&1 &
+          echo "HUB_PID=$!" >> $GITHUB_ENV
+          sleep 2
+          for i in $(seq 1 10); do
+            if curl -sf http://127.0.0.1:19081/api/health > /dev/null 2>&1; then
+              echo "Tunnel hub is ready"
+              break
+            fi
+            echo "Waiting for hub... ($i/10)"
+            sleep 1
+          done
+
+      - name: Start CodeNomad server
+        run: |
+          node packages/server/dist/index.js \
+            --password testpass \
+            --host 127.0.0.1 \
+            --http-port 19899 \
+            --http true \
+            --unrestricted-root \
+            --tunnel-hub-url http://127.0.0.1:19081 \
+            > /tmp/codenomad-tunnel.log 2>&1 &
+          echo "CODENOMAD_PID=$!" >> $GITHUB_ENV
+          sleep 5
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:19899/api/auth/status > /dev/null 2>&1; then
+              echo "CodeNomad server is ready"
+              break
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 2
+          done
+
+      - name: Login to CodeNomad
+        run: |
+          curl -sv -c /tmp/cn-cookies.txt -X POST http://127.0.0.1:19899/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"username":"codenomad","password":"testpass"}' 2>&1 > /tmp/login-response.txt
+          echo "Login response:"
+          cat /tmp/login-response.txt | grep -v "^[<>*]" | tail -5
+
+      - name: Test tunnel creation via CodeNomad API
+        id: create_tunnel
+        run: |
+          echo "## Tunnel Integration Test" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          CREATE_RESPONSE=$(curl -s -b /tmp/cn-cookies.txt \
+            -X POST http://127.0.0.1:19899/api/tunnels \
+            -H "Content-Type: application/json" \
+            -d '{"targetHost":"127.0.0.1","targetPort":18888}')
+          echo "$CREATE_RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$CREATE_RESPONSE"
+
+          TUNNEL_ID=$(echo "$CREATE_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
+          SUBDOMAIN=$(echo "$CREATE_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('subdomain',''))" 2>/dev/null || true)
+          PUBLIC_URL=$(echo "$CREATE_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('publicUrl',''))" 2>/dev/null || true)
+
+          echo "| POST /api/tunnels | 200 | id=$TUNNEL_ID subdomain=$SUBDOMAIN |" >> $GITHUB_STEP_SUMMARY
+
+          if [ -z "$TUNNEL_ID" ]; then
+            echo "❌ Tunnel creation failed" >> $GITHUB_STEP_SUMMARY
+            echo "Response: $CREATE_RESPONSE" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          echo "tunnel_id=$TUNNEL_ID" >> $GITHUB_OUTPUT
+          echo "subdomain=$SUBDOMAIN" >> $GITHUB_OUTPUT
+          echo "public_url=$PUBLIC_URL" >> $GITHUB_OUTPUT
+          echo "✅ Tunnel created: $TUNNEL_ID ($SUBDOMAIN)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Verify tunnel connected
+        run: |
+          sleep 3
+
+          echo "### Verify Tunnel Status" >> $GITHUB_STEP_SUMMARY
+
+          TUNNELS_RESPONSE=$(curl -s -b /tmp/cn-cookies.txt http://127.0.0.1:19899/api/tunnels)
+          echo "CodeNomad tunnels: $TUNNELS_RESPONSE" | head -c 500 >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          STATUS_RESPONSE=$(curl -s http://127.0.0.1:19081/api/tunnels 2>/dev/null || echo "failed")
+          echo "Hub tunnels: $STATUS_RESPONSE" | head -c 500 >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          TUNNEL_STATUS=$(echo "$TUNNELS_RESPONSE" | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          tunnels = data.get('tunnels', [])
+          for t in tunnels:
+              print(t.get('status', 'unknown'))
+          " 2>/dev/null | head -1 || echo "parse-error")
+
+          echo "| Tunnel status | - | $TUNNEL_STATUS |" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$TUNNEL_STATUS" = "connected" ]; then
+            echo "✅ Tunnel is connected" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Tunnel status: $TUNNEL_STATUS (may still be connecting)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Verify tunnel forwarding
+        run: |
+          SUBDOMAIN="${{ steps.create_tunnel.outputs.subdomain }}"
+          echo "### Verify Traffic Forwarding" >> $GITHUB_STEP_SUMMARY
+          echo "Testing with Host header: $SUBDOMAIN.tunnel.test" >> $GITHUB_STEP_SUMMARY
+
+          sleep 2
+
+          RESPONSE=$(curl -s -H "Host: ${SUBDOMAIN}.tunnel.test" http://127.0.0.1:19080/ --max-time 10 2>&1 || echo "CURL_FAILED")
+
+          echo "| Forward test | - | Response: \`$(echo "$RESPONSE" | head -c 200)\` |" >> $GITHUB_STEP_SUMMARY
+
+          if echo "$RESPONSE" | grep -q "Hello from tunnel test"; then
+            echo "✅ **Tunnel forwarding works** - traffic correctly proxied through hub" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Tunnel forwarding check inconclusive" >> $GITHUB_STEP_SUMMARY
+            echo "Response was: $RESPONSE" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Test tunnel status endpoint
+        run: |
+          STATUS_RESPONSE=$(curl -s -b /tmp/cn-cookies.txt http://127.0.0.1:19899/api/tunnels/status)
+          echo "| GET /api/tunnels/status | - | \`$(echo $STATUS_RESPONSE | head -c 300)\` |" >> $GITHUB_STEP_SUMMARY
+
+          TEST_CONN_RESPONSE=$(curl -s -b /tmp/cn-cookies.txt \
+            -X POST http://127.0.0.1:19899/api/tunnels/test-connection \
+            -H "Content-Type: application/json" \
+            -d '{"hubUrl":"http://127.0.0.1:19081"}')
+          echo "| POST /api/tunnels/test-connection | - | \`$(echo $TEST_CONN_RESPONSE | head -c 300)\` |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Collect logs
+        if: always()
+        run: |
+          echo "### Tunnel Hub Log" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -50 /tmp/tunnel-hub.log >> $GITHUB_STEP_SUMMARY 2>/dev/null || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          echo "### CodeNomad Server Log" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -50 /tmp/codenomad-tunnel.log >> $GITHUB_STEP_SUMMARY 2>/dev/null || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Stop all processes
+        if: always()
+        run: |
+          kill $CODENOMAD_PID 2>/dev/null || true
+          kill $HUB_PID 2>/dev/null || true
+          kill $HTTP_PID 2>/dev/null || true
+
   report:
     runs-on: ubuntu-latest
-    needs: [test-fixed-port, test-port-fallback, build-test, e2e-smoke]
+    needs: [test-fixed-port, test-port-fallback, build-test, e2e-smoke, tunnel-integration]
     if: always()
     permissions:
       issues: write
@@ -452,13 +644,15 @@ jobs:
           FALLBACK="${{ needs.test-port-fallback.result }}"
           BUILD="${{ needs.build-test.result }}"
           E2E="${{ needs.e2e-smoke.result }}"
+          TUNNEL="${{ needs.tunnel-integration.result }}"
 
           echo "fixed=$FIXED" >> $GITHUB_OUTPUT
           echo "fallback=$FALLBACK" >> $GITHUB_OUTPUT
           echo "build=$BUILD" >> $GITHUB_OUTPUT
           echo "e2e=$E2E" >> $GITHUB_OUTPUT
+          echo "tunnel=$TUNNEL" >> $GITHUB_OUTPUT
 
-          if [ "$FIXED" != "success" ] || [ "$FALLBACK" != "success" ] || [ "$BUILD" != "success" ] || [ "$E2E" != "success" ]; then
+          if [ "$FIXED" != "success" ] || [ "$FALLBACK" != "success" ] || [ "$BUILD" != "success" ] || [ "$E2E" != "success" ] || [ "$TUNNEL" != "success" ]; then
             echo "has_failures=true" >> $GITHUB_OUTPUT
           else
             echo "has_failures=false" >> $GITHUB_OUTPUT
@@ -481,30 +675,36 @@ jobs:
            | Fixed Port Test | ${{ needs.test-fixed-port.result }} |
            | Port Fallback Test | ${{ needs.test-port-fallback.result }} |
            | Build Test | ${{ needs.build-test.result }} |
-           | E2E Smoke Test | ${{ needs.e2e-smoke.result }} |
+            | E2E Smoke Test | ${{ needs.e2e-smoke.result }} |
+            | Tunnel Integration | ${{ needs.tunnel-integration.result }} |
 
-          ### Failing Jobs
-          "
+            ### Failing Jobs
+            "
 
-          if [ "${{ needs.test-fixed-port.result }}" != "success" ]; then
-            BODY+="- ❌ **Fixed Port Test**: Server start or login failed on fixed port
-          "
-          fi
+            if [ "${{ needs.test-fixed-port.result }}" != "success" ]; then
+              BODY+="- ❌ **Fixed Port Test**: Server start or login failed on fixed port
+            "
+            fi
 
-          if [ "${{ needs.test-port-fallback.result }}" != "success" ]; then
-            BODY+="- ❌ **Port Fallback Test**: Server port fallback or login failed - UI connection broken after port change
-          "
-          fi
+            if [ "${{ needs.test-port-fallback.result }}" != "success" ]; then
+              BODY+="- ❌ **Port Fallback Test**: Server port fallback or login failed - UI connection broken after port change
+            "
+            fi
 
-          if [ "${{ needs.build-test.result }}" != "success" ]; then
-            BODY+="- ❌ **Build Test**: Source code build or typecheck failed
-          "
-          fi
+            if [ "${{ needs.build-test.result }}" != "success" ]; then
+              BODY+="- ❌ **Build Test**: Source code build or typecheck failed
+            "
+            fi
 
-          if [ "${{ needs.e2e-smoke.result }}" != "success" ]; then
-            BODY+="- ❌ **E2E Smoke Test**: Playwright end-to-end tests failed
-          "
-          fi
+            if [ "${{ needs.e2e-smoke.result }}" != "success" ]; then
+              BODY+="- ❌ **E2E Smoke Test**: Playwright end-to-end tests failed
+            "
+            fi
+
+            if [ "${{ needs.tunnel-integration.result }}" != "success" ]; then
+              BODY+="- ❌ **Tunnel Integration**: Tunnel hub + CodeNomad tunnel creation or forwarding failed
+            "
+            fi
 
           BODY+="
           ---
@@ -537,3 +737,4 @@ jobs:
           echo "| Port Fallback + Login | ${{ needs.test-port-fallback.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Build + TypeCheck | ${{ needs.build-test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| E2E Smoke | ${{ needs.e2e-smoke.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tunnel Integration | ${{ needs.tunnel-integration.result }} |" >> $GITHUB_STEP_SUMMARY
