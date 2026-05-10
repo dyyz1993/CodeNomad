@@ -24,12 +24,15 @@
 
 ## In Progress
 
-- [ ] **0.15.28** Feat: 跨会话通信（Cross-Session Messaging）
-  - [ ] Server 端: `packages/server/src/plugins/cross-session.ts` — 跨 workspace 查找 + prompt_async 转发
-  - [ ] Plugin 端: `packages/opencode-config/plugin/lib/cross-session.ts` — list_sessions + send_message 工具
-  - [ ] 注册工具到插件 + 注册路由到 HTTP server
-  - [ ] Auto-Continue 测试补充
-  - [ ] 跨会话通信测试
+- [ ] Auto-Continue 测试补充
+- [ ] 跨会话通信测试
+
+## Recently Completed
+
+- [x] **0.15.28** Feat: 跨会话通信（Cross-Session Messaging）
+  - [x] Server 端: `packages/server/src/plugins/cross-session.ts` — 跨 workspace 查找 + prompt_async 转发
+  - [x] Plugin 端: `packages/opencode-config/plugin/lib/cross-session.ts` — list_sessions + send_message 工具
+  - [x] 注册工具到插件 + 注册路由到 HTTP server
 
 ## Backlog
 
