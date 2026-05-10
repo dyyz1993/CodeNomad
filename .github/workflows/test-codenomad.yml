@@ -378,6 +378,9 @@ jobs:
             npm install -g @dyyz1993/codenomad@${{ steps.version.outputs.version }} && break || sleep 10
           done
 
+      - name: Install dependencies
+        run: npm install
+
       - name: Install Playwright
         run: npx playwright install --with-deps chromium
 
