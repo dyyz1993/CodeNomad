@@ -503,9 +503,10 @@ jobs:
             --unrestricted-root \
             --tunnel-hub-url http://127.0.0.1:19081 \
             > /tmp/codenomad-tunnel.log 2>&1 &
-          echo "CODENOMAD_PID=$!" >> $GITHUB_ENV
+          SERVER_PID=$!
+          echo "CODENOMAD_PID=$SERVER_PID" >> $GITHUB_ENV
           sleep 5
-          if ! kill -0 $CODENOMAD_PID 2>/dev/null; then
+          if ! kill -0 $SERVER_PID 2>/dev/null; then
             echo "=== CodeNomad failed to start ==="
             cat /tmp/codenomad-tunnel.log
             exit 1
