@@ -34,11 +34,24 @@ export async function CodeNomadPlugin(input: PluginInput) {
       ...crossSessionTools,
     },
     async "chat.message"(_input: { sessionID: string }, output: { message: { system?: string } }) {
-      if (!voiceModeEnabled) {
-        return
+      const parts: string[] = []
+
+      if (voiceModeEnabled) {
+        parts.push(buildVoiceModePrompt())
       }
 
-      output.message.system = [output.message.system, buildVoiceModePrompt()].filter(Boolean).join("\n\n")
+      try {
+        const commHistory = await fetchCommunicationHistory(config, _input.sessionID)
+        if (commHistory) {
+          parts.push(commHistory)
+        }
+      } catch {
+        // non-critical: don't block chat if history fetch fails
+      }
+
+      if (parts.length > 0) {
+        output.message.system = [output.message.system, ...parts].filter(Boolean).join("\n\n")
+      }
     },
     async event(input: { event: any }) {
       const opencodeEvent = input?.event
@@ -62,4 +75,32 @@ function buildVoiceModePrompt(): string {
     "Example:",
     "```spoken\nI implemented the relay-based voice-mode flow and it works with the current plugin bridge. The reconnect caveat is explained below.\n```",
   ].join("\n\n")
+}
+
+async function fetchCommunicationHistory(config: { instanceId: string; baseUrl: string }, sessionId: string): Promise<string | null> {
+  const { createCodeNomadRequester } = await import("./lib/request")
+  const requester = createCodeNomadRequester(config)
+  const response = await requester.requestJson<{ history: Array<{
+    fromSessionId: string
+    fromWorkspaceId: string
+    toSessionId: string
+    toWorkspaceId: string
+    topic: string
+    sentAt: number
+  }> }>(`/cross-session/history?sessionId=${encodeURIComponent(sessionId)}`)
+
+  if (!response.history || response.history.length === 0) {
+    return null
+  }
+
+  const lines = response.history.map((r) => {
+    const isSender = r.fromSessionId === sessionId
+    const direction = isSender ? "→" : "←"
+    const peerId = isSender ? r.toSessionId : r.fromSessionId
+    const time = new Date(r.sentAt).toLocaleString()
+    const role = isSender ? "发送给" : "收到来自"
+    return `- ${direction} ${role} ${peerId} 于 ${time}，话题: "${r.topic}"`
+  })
+
+  return `[通信记录] 你曾与以下会话通信:\n${lines.join("\n")}`
 }

@@ -14,13 +14,27 @@ interface SendMessageRequest {
 interface SessionInfo {
   sessionId: string
   workspaceId: string
+  workspaceName: string
   workspacePath: string
   status: string
   title?: string
+  lastActivity?: string
+  isMainSession: boolean
+}
+
+interface CommunicationRecord {
+  fromSessionId: string
+  fromWorkspaceId: string
+  toSessionId: string
+  toWorkspaceId: string
+  topic: string
+  sentAt: number
+  respondedAt?: number
 }
 
 export class CrossSessionManager {
   private readonly logger: Logger
+  private readonly history: CommunicationRecord[] = []
 
   constructor(
     private readonly baseLogger: Logger,
@@ -111,6 +125,7 @@ export class CrossSessionManager {
         return { success: false, error: message || `Prompt request failed with ${response.status}` }
       }
 
+      this.recordCommunication(req)
       return { success: true }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
@@ -143,14 +158,23 @@ export class CrossSessionManager {
 
       const data = (await response.json()) as unknown
       const sessions = parseSessionList(data)
+      const workspaceName = workspace.path.split("/").pop() ?? workspace.path
 
-      return sessions.map((s: any) => ({
-        sessionId: s.id ?? s.sessionID ?? "",
-        workspaceId,
-        workspacePath: workspace.path,
-        status: s.status ?? "unknown",
-        title: s.title ?? s.name ?? undefined,
-      }))
+      const mapped = sessions
+        .map((s: any) => ({
+          sessionId: s.id ?? s.sessionID ?? "",
+          workspaceId,
+          workspaceName,
+          workspacePath: workspace.path,
+          status: s.status ?? "unknown",
+          title: s.title ?? s.name ?? undefined,
+          lastActivity: s.lastActivity ?? s.updatedAt ?? s.lastMessageAt ?? undefined,
+          isMainSession: !s.parentSessionId && !s.parent_session_id,
+        }))
+        .filter((s) => s.isMainSession)
+        .slice(0, 5)
+
+      return mapped
     } catch (error) {
       this.logger.debug({ err: error, workspaceId }, "Failed to fetch sessions from workspace")
       return []
@@ -174,24 +198,31 @@ export class CrossSessionManager {
   }
 
   private buildCrossSessionMessage(req: SendMessageRequest): string {
-    return `<cross-session-message>
-  <source>
-    <session-id>${this.escapeXml(req.sourceSessionId)}</session-id>
-    <workspace-id>${this.escapeXml(req.sourceWorkspaceId)}</workspace-id>
-    ${req.sourceProjectPath ? `<project-path>${this.escapeXml(req.sourceProjectPath)}</project-path>` : ""}
-  </source>
-  <target-session-id>${this.escapeXml(req.targetSessionId)}</target-session-id>
-  <content>${this.escapeXml(req.message)}</content>
-</cross-session-message>`
+    const parts = [`[跨会话消息 from=${req.sourceSessionId}@${req.sourceWorkspaceId}]`, req.message]
+    if (req.sourceProjectPath) {
+      parts.splice(1, 0, `来源项目: ${req.sourceProjectPath}`)
+    }
+    return parts.join("\n")
   }
 
-  private escapeXml(input: string): string {
-    return input
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&apos;")
+  private recordCommunication(req: SendMessageRequest): void {
+    this.history.push({
+      fromSessionId: req.sourceSessionId,
+      fromWorkspaceId: req.sourceWorkspaceId,
+      toSessionId: req.targetSessionId,
+      toWorkspaceId: req.targetWorkspaceId ?? "",
+      topic: req.message.slice(0, 50),
+      sentAt: Date.now(),
+    })
+    if (this.history.length > 100) {
+      this.history.shift()
+    }
+  }
+
+  getHistory(sessionId: string): CommunicationRecord[] {
+    return this.history.filter(
+      (r) => r.fromSessionId === sessionId || r.toSessionId === sessionId,
+    )
   }
 }
 
@@ -202,4 +233,4 @@ function parseSessionList(data: unknown): any[] {
   return []
 }
 
-export type { SendMessageRequest, SessionInfo }
+export type { SendMessageRequest, SessionInfo, CommunicationRecord }

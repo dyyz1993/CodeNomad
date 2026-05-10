@@ -93,6 +93,23 @@ export function registerPluginRoutes(app: FastifyInstance, deps: RouteDeps) {
     return { sessions }
   })
 
+  app.get<{ Params: { id: string }; Querystring: { sessionId?: string } }>("/workspaces/:id/plugin/cross-session/history", async (request, reply) => {
+    const workspace = deps.workspaceManager.get(request.params.id)
+    if (!workspace) {
+      reply.code(404).send({ error: "Workspace not found" })
+      return
+    }
+
+    const sessionId = request.query.sessionId
+    if (!sessionId) {
+      reply.code(400).send({ error: "sessionId query parameter is required" })
+      return
+    }
+
+    const history = deps.crossSessionManager.getHistory(sessionId)
+    return { history }
+  })
+
   const SendMessageSchema = z.object({
     targetSessionId: z.string().min(1),
     targetWorkspaceId: z.string().optional(),
