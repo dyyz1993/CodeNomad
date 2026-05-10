@@ -80,7 +80,7 @@ export function registerTunnelRoutes(app: FastifyInstance, deps: RouteDeps) {
 
     try {
       const url = hubUrl.replace(/\/+$/, "")
-      const response = await fetch(`${url}:8080/api/health`, {
+      const response = await fetch(`${url}/api/health`, {
         signal: AbortSignal.timeout(5000),
       })
 

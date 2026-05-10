@@ -84,7 +84,7 @@ export class TunnelClient {
 
     if (!this.enabled) throw new Error("Tunnel client is not enabled")
 
-    const apiUrl = `${this.config.hubUrl.replace(/\/+$/, "")}:8080/api/tunnels`
+    const apiUrl = `${this.config.hubUrl.replace(/\/+$/, "")}/api/tunnels`
 
     const response = await fetch(apiUrl, {
       method: "POST",
@@ -269,7 +269,7 @@ export class TunnelClient {
     }
 
     try {
-      const apiUrl = `${this.config.hubUrl.replace(/\/+$/, "")}:8080/api/tunnels/${tunnel.info.id}`
+      const apiUrl = `${this.config.hubUrl.replace(/\/+$/, "")}/api/tunnels/${tunnel.info.id}`
       await fetch(apiUrl, { method: "DELETE" })
     } catch (err) {
       this.logger.warn(
@@ -302,7 +302,7 @@ export class TunnelClient {
       keys.map((key) => {
         const tunnel = this.tunnels.get(key)!
         tunnel.ws?.close()
-        const apiUrl = `${this.config.hubUrl.replace(/\/+$/, "")}:8080/api/tunnels/${tunnel.info.id}`
+        const apiUrl = `${this.config.hubUrl.replace(/\/+$/, "")}/api/tunnels/${tunnel.info.id}`
         return fetch(apiUrl, { method: "DELETE" }).catch(() => {})
       }),
     )
