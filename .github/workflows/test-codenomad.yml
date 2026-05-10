@@ -444,29 +444,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+
+      - name: Get latest version
+        id: version
+        run: echo "version=$(npm view @dyyz1993/codenomad version)" >> $GITHUB_OUTPUT
+
+      - name: Install codenomad
+        run: |
+          for i in 1 2 3; do
+            npm install -g @dyyz1993/codenomad@${{ steps.version.outputs.version }} && break || sleep 10
+          done
 
       - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
 
-      - name: Build tunnel-hub
+      - name: Clone and build tunnel-hub
         run: |
           git clone https://github.com/dyyz1993/codenomad-tunnel.git /tmp/codenomad-tunnel
           cd /tmp/codenomad-tunnel
           go build -o /tmp/tunnel-hub .
-
-      - name: Build CodeNomad from source
-        run: |
-          npm install
-          cd packages/ui && npm run build && cd ../..
-          cd packages/server && npm run prepare-ui && npx tsc -p tsconfig.json && node ./scripts/copy-auth-pages.mjs && npm run prepare-config && cd ../..
-
-      - name: Verify build output
-        run: |
-          ls packages/server/dist/server/proxy/ 2>/dev/null || echo "WARNING: proxy dir missing from dist"
-          ls packages/server/dist/server/http-server.js 2>/dev/null || echo "WARNING: http-server.js missing from dist"
-          ls packages/server/dist/index.js 2>/dev/null || echo "WARNING: index.js missing from dist"
 
       - name: Start test HTTP service
         run: |
@@ -498,7 +495,7 @@ jobs:
 
       - name: Start CodeNomad server
         run: |
-          node packages/server/dist/index.js \
+          codenomad \
             --password testpass \
             --host 127.0.0.1 \
             --http-port 19899 \
