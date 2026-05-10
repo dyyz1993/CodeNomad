@@ -102,7 +102,11 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: RouteDeps) {
   })
 
   app.delete<{ Params: { id: string } }>("/api/workspaces/:id", async (request, reply) => {
-    await deps.workspaceManager.delete(request.params.id)
+    const existed = await deps.workspaceManager.delete(request.params.id)
+    if (!existed) {
+      reply.code(404)
+      return { error: "Workspace not found" }
+    }
     reply.code(204)
   })
 

@@ -1,8 +1,8 @@
 # CodeNomad - Development Progress
 
-## Version: 0.15.27 (dev branch)
+## Version: 0.15.33 (dev branch)
 
-## Completed (0.15.11 - 0.15.27)
+## Completed (0.15.11 - 0.15.33)
 
 - [x] **0.15.11** Fork + npm publish + CI workflows
 - [x] **0.15.12** Fix: 消息消失（禁用过度 eviction）
@@ -22,11 +22,6 @@
 - [x] **0.15.26** Fix: 所有 socket 错误（UndiciSocketError 等）都触发恢复
 - [x] **0.15.27** Feat: Auto-Continue 自动续跑（服务端监听 + 5 秒确认 + prompt_async）
 
-## In Progress
-
-- [ ] Auto-Continue 测试补充
-- [ ] 跨会话通信测试
-
 ## Recently Completed
 
 - [x] **0.15.28** Feat: 跨会话通信（Cross-Session Messaging）
@@ -43,6 +38,12 @@
 
 ## Backlog
 
+- [x] **0.15.33** Test: 178 个新单元测试（342 总计）
+  - [x] Tier 1: merge-patch (22), token-manager (10), release-monitor (22), tls-helpers (9), git-status-parse (12), worktree-map (14)
+  - [x] Tier 2: config-schema (26), yaml-doc-store (15), filesystem-browser-expanded (40), git-worktrees-expanded (26)
+
+## Backlog
+
 - [ ] Dockerfile + docker-compose
 - [ ] E2E tests (Playwright)
 - [ ] 超大文件拆分（6 个 >1000 行）
@@ -56,9 +57,9 @@
 
 ## Test Stats
 
-- Server: 105 tests (27 suites)
+- Server: 342 tests (68 suites)
 - UI: 18 tests (7 suites)
-- Total: 123 tests, 0 failures
+- Total: 360 tests, 0 failures
 
 ## KB References
 

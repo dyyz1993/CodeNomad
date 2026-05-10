@@ -353,6 +353,7 @@ async function main() {
     logger: logger.child({ component: "sidecars" }),
   })
   const autoContinueManager = new AutoContinueManager(logger, workspaceManager)
+  workspaceManager.autoContinueManager = autoContinueManager
   const crossSessionManager = new CrossSessionManager(logger, workspaceManager)
   const instanceEventBridge = new InstanceEventBridge({
     workspaceManager,

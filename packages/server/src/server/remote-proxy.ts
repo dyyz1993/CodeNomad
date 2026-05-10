@@ -552,15 +552,17 @@ function rewriteLocation(location: string, targetBaseUrl: URL, localBaseUrl: URL
   }
 }
 
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+])
+
 function isHopByHopHeader(name: string): boolean {
-  return new Set([
-    "connection",
-    "keep-alive",
-    "proxy-authenticate",
-    "proxy-authorization",
-    "te",
-    "trailer",
-    "transfer-encoding",
-    "upgrade",
-  ]).has(name)
+  return HOP_BY_HOP_HEADERS.has(name)
 }

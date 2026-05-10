@@ -194,6 +194,22 @@ export class AutoContinueManager {
     }
   }
 
+  removeSession(workspaceId: string, sessionId: string): void {
+    const k = this.key(workspaceId, sessionId)
+    const state = this.sessions.get(k)
+    if (state?.confirmTimer) clearTimeout(state.confirmTimer)
+    this.sessions.delete(k)
+  }
+
+  removeWorkspaceSessions(workspaceId: string): void {
+    for (const [key, state] of this.sessions.entries()) {
+      if (key.startsWith(`${workspaceId}:`)) {
+        if (state.confirmTimer) clearTimeout(state.confirmTimer)
+        this.sessions.delete(key)
+      }
+    }
+  }
+
   dispose(): void {
     for (const state of this.sessions.values()) {
       if (state.confirmTimer) clearTimeout(state.confirmTimer)

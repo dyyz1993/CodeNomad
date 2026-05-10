@@ -1,6 +1,6 @@
 {
   "name": "codenomad-workspace",
-  "version": "0.15.30",
+  "version": "0.15.34",
   "private": true,
   "description": "CodeNomad monorepo workspace",
   "license": "MIT",
@@ -31,6 +31,7 @@
     "google-auth-library": "^10.5.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "baseline-browser-mapping": "^2.9.11"
   },
   "optionalDependencies": {

@@ -76,6 +76,15 @@ interface HttpServerStartResult {
   displayHost: string
 }
 
+let cachedIndexHtml: string | null = null
+
+function getIndexHtml(indexPath: string): string {
+  if (cachedIndexHtml === null) {
+    cachedIndexHtml = fs.readFileSync(indexPath, "utf-8")
+  }
+  return cachedIndexHtml
+}
+
 export function createHttpServer(deps: HttpServerDeps) {
   // Fastify's type-level RawServer inference gets noisy when toggling HTTP vs HTTPS.
   // We keep the runtime behavior correct and cast the instance to a generic FastifyInstance.
@@ -277,7 +286,7 @@ export function createHttpServer(deps: HttpServerDeps) {
     const uiDir = deps.uiStaticDir
     const indexPath = path.join(uiDir, "index.html")
     if (uiDir && fs.existsSync(indexPath)) {
-      reply.type("text/html").send(fs.readFileSync(indexPath, "utf-8"))
+      reply.type("text/html").send(getIndexHtml(indexPath))
       return
     }
 
@@ -317,6 +326,7 @@ export function createHttpServer(deps: HttpServerDeps) {
     channel: deps.pluginChannel,
     voiceModeManager: deps.voiceModeManager,
     crossSessionManager: deps.crossSessionManager,
+    autoContinueManager: deps.autoContinueManager,
   })
   registerBackgroundProcessRoutes(app, { backgroundProcessManager })
   registerInstanceProxyRoutes(app, { workspaceManager: deps.workspaceManager, logger: proxyLogger })
@@ -885,7 +895,7 @@ function setupStaticUi(app: FastifyInstance, uiDir: string, authManager: AuthMan
     }
 
     if (fs.existsSync(indexPath)) {
-      reply.type("text/html").send(fs.readFileSync(indexPath, "utf-8"))
+      reply.type("text/html").send(getIndexHtml(indexPath))
     } else {
       reply.code(404).send({ message: "UI bundle missing" })
     }
@@ -1220,15 +1230,17 @@ function sanitizeSideCarProxyRequestHeaders(
   return next
 }
 
+const BLOCKED_SIDECAR_REQUEST_HEADERS = new Set([
+  "host",
+  "authorization",
+  "proxy-authorization",
+  "forwarded",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-forwarded-port",
+  "x-forwarded-proto",
+])
+
 function getBlockedSideCarRequestHeaders(): Set<string> {
-  return new Set([
-    "host",
-    "authorization",
-    "proxy-authorization",
-    "forwarded",
-    "x-forwarded-for",
-    "x-forwarded-host",
-    "x-forwarded-port",
-    "x-forwarded-proto",
-  ])
+  return BLOCKED_SIDECAR_REQUEST_HEADERS
 }

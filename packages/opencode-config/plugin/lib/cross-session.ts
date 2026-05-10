@@ -115,5 +115,46 @@ export function createCrossSessionTools(config: CodeNomadConfig) {
         return `[通信记录]\n${lines.join("\n")}`
       },
     }),
+
+    stop_auto_continue: tool({
+      description:
+        "停止当前会话的自动续跑功能。当你判断任务已经完成或不再需要继续时，调用此工具停止自动发送续跑消息。",
+      args: {},
+      async execute(_args, context) {
+        const result = await requester.requestJson<{ stopped: boolean }>(
+          "/auto-continue/stop",
+          {
+            method: "POST",
+            body: JSON.stringify({ sessionId: context.sessionID }),
+          },
+        )
+        return result.stopped ? "Auto-continue has been stopped." : "Auto-continue was not active."
+      },
+    }),
+
+    get_auto_continue_status: tool({
+      description:
+        "查看当前会话的自动续跑状态，包括是否开启、已触发次数、最大次数等。",
+      args: {},
+      async execute(_args, context) {
+        const status = await requester.requestJson<{
+          enabled: boolean
+          prompt: string
+          triggerCount: number
+          maxTriggers: number
+          cooldownMs: number
+          lastTriggerAt: number
+        }>(`/auto-continue/status?sessionId=${encodeURIComponent(context.sessionID)}`)
+
+        return [
+          `[Auto-Continue Status]`,
+          `Enabled: ${status.enabled}`,
+          `Trigger Count: ${status.triggerCount} / ${status.maxTriggers}`,
+          `Cooldown: ${status.cooldownMs}ms`,
+          `Last Trigger: ${status.lastTriggerAt ? new Date(status.lastTriggerAt).toLocaleString() : "never"}`,
+          `Prompt: "${status.prompt}"`,
+        ].join("\n")
+      },
+    }),
   }
 }

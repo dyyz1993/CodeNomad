@@ -184,17 +184,23 @@ export class CrossSessionManager {
   private async findSessionWorkspace(targetSessionId: string): Promise<string | undefined> {
     const workspaces = this.workspaceManager.list().filter((w) => w.status === "ready")
 
-    for (const ws of workspaces) {
-      const port = this.workspaceManager.getInstancePort(ws.id)
-      if (!port) continue
+    const results = await Promise.allSettled(
+      workspaces.map(async (ws) => {
+        const port = this.workspaceManager.getInstancePort(ws.id)
+        if (!port) return null
 
-      const sessions = await this.fetchWorkspaceSessions(ws.id, port)
-      if (sessions.some((s) => s.sessionId === targetSessionId)) {
-        return ws.id
-      }
-    }
+        const sessions = await this.fetchWorkspaceSessions(ws.id, port)
+        if (sessions.some((s) => s.sessionId === targetSessionId)) {
+          return ws.id
+        }
+        return null
+      }),
+    )
 
-    return undefined
+    const found = results.find(
+      (r) => r.status === "fulfilled" && r.value !== null,
+    )
+    return found && found.status === "fulfilled" ? (found.value as string | undefined) : undefined
   }
 
   private buildCrossSessionMessage(req: SendMessageRequest): string {

@@ -358,9 +358,89 @@ jobs:
         run: npx tsx --test src/**/*.test.ts
         working-directory: packages/ui
 
+  e2e-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build-test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Build UI
+        run: npm run build:ui
+
+      - name: Build server
+        run: cd packages/server && npm run build
+
+      - name: Install Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Create temp config dir
+        run: mkdir -p /tmp/codenomad-e2e-config
+
+      - name: Start server
+        run: |
+          node packages/server/dist/index.js \
+            --password e2etest \
+            --host 127.0.0.1 \
+            --http-port 19899 \
+            --http true \
+            --unrestricted-root \
+            --config /tmp/codenomad-e2e-config \
+            --auth-cookie-name codenomad-e2e \
+            --ui-dir packages/server/public \
+            > /tmp/codenomad-e2e.log 2>&1 &
+          echo "CODENOMAD_PID=$!" >> $GITHUB_ENV
+
+      - name: Wait for server ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:19899/api/health > /dev/null 2>&1; then
+              echo "Server ready after ${i} attempts"
+              break
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:19899/api/health || (echo "Server failed to start" && cat /tmp/codenomad-e2e.log && exit 1)
+
+      - name: Login to get auth cookie
+        run: |
+          curl -sf -c /tmp/e2e-cookies.txt -X POST http://127.0.0.1:19899/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"username":"codenomad","password":"e2etest"}' || true
+
+      - name: Run Playwright tests
+        run: E2E_BASE_URL=http://127.0.0.1:19899 E2E_PASSWORD=e2etest npx playwright test --reporter=list
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-server-logs
+          path: /tmp/codenomad-e2e.log
+          retention-days: 7
+
+      - name: Stop server
+        if: always()
+        run: kill $CODENOMAD_PID 2>/dev/null || true
+
   report:
     runs-on: ubuntu-latest
-    needs: [test-fixed-port, test-port-fallback, build-test]
+    needs: [test-fixed-port, test-port-fallback, build-test, e2e-smoke]
     if: always()
     permissions:
       issues: write
@@ -373,12 +453,14 @@ jobs:
           FIXED="${{ needs.test-fixed-port.result }}"
           FALLBACK="${{ needs.test-port-fallback.result }}"
           BUILD="${{ needs.build-test.result }}"
+          E2E="${{ needs.e2e-smoke.result }}"
 
           echo "fixed=$FIXED" >> $GITHUB_OUTPUT
           echo "fallback=$FALLBACK" >> $GITHUB_OUTPUT
           echo "build=$BUILD" >> $GITHUB_OUTPUT
+          echo "e2e=$E2E" >> $GITHUB_OUTPUT
 
-          if [ "$FIXED" != "success" ] || [ "$FALLBACK" != "success" ] || [ "$BUILD" != "success" ]; then
+          if [ "$FIXED" != "success" ] || [ "$FALLBACK" != "success" ] || [ "$BUILD" != "success" ] || [ "$E2E" != "success" ]; then
             echo "has_failures=true" >> $GITHUB_OUTPUT
           else
             echo "has_failures=false" >> $GITHUB_OUTPUT
@@ -398,9 +480,10 @@ jobs:
           ### Results
           | Job | Status |
           |-----|--------|
-          | Fixed Port Test | ${{ needs.test-fixed-port.result }} |
-          | Port Fallback Test | ${{ needs.test-port-fallback.result }} |
-          | Build Test | ${{ needs.build-test.result }} |
+           | Fixed Port Test | ${{ needs.test-fixed-port.result }} |
+           | Port Fallback Test | ${{ needs.test-port-fallback.result }} |
+           | Build Test | ${{ needs.build-test.result }} |
+           | E2E Smoke Test | ${{ needs.e2e-smoke.result }} |
 
           ### Failing Jobs
           "
@@ -417,6 +500,11 @@ jobs:
 
           if [ "${{ needs.build-test.result }}" != "success" ]; then
             BODY+="- ❌ **Build Test**: Source code build or typecheck failed
+          "
+          fi
+
+          if [ "${{ needs.e2e-smoke.result }}" != "success" ]; then
+            BODY+="- ❌ **E2E Smoke Test**: Playwright end-to-end tests failed
           "
           fi
 
@@ -450,3 +538,4 @@ jobs:
           echo "| Fixed Port + Login | ${{ needs.test-fixed-port.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Port Fallback + Login | ${{ needs.test-port-fallback.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Build + TypeCheck | ${{ needs.build-test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| E2E Smoke | ${{ needs.e2e-smoke.result }} |" >> $GITHUB_STEP_SUMMARY

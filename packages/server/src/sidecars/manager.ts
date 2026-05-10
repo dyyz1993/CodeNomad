@@ -28,6 +28,8 @@ interface SideCarRuntimeRecord {
 export class SideCarManager {
   private readonly configs = new Map<string, SideCarConfigRecord>()
   private readonly runtime = new Map<string, SideCarRuntimeRecord>()
+  private readonly portStatusCache = new Map<string, { alive: boolean; checkedAt: number }>()
+  private readonly PORT_STATUS_TTL_MS = 5_000
 
   private constructor(private readonly options: SideCarManagerOptions) {}
 
@@ -120,6 +122,7 @@ export class SideCarManager {
 
     this.configs.delete(id)
     this.runtime.delete(id)
+    this.portStatusCache.delete(id)
     await this.persistConfigs()
     this.options.eventBus.publish({ type: "sidecar.removed", sidecarId: id })
     return true
@@ -160,10 +163,24 @@ export class SideCarManager {
     await Promise.all(Array.from(this.configs.values()).map((record) => this.refreshPortSideCar(record.id)))
   }
 
+  clearPortStatusCache(): void {
+    this.portStatusCache.clear()
+  }
+
   private async refreshPortSideCar(id: string) {
     const record = this.configs.get(id)
     if (!record) return
-    const isAvailable = await this.isPortAvailable(record.port)
+
+    const now = Date.now()
+    const cached = this.portStatusCache.get(id)
+    let isAvailable: boolean
+    if (cached && now - cached.checkedAt < this.PORT_STATUS_TTL_MS) {
+      isAvailable = cached.alive
+    } else {
+      isAvailable = await this.isPortAvailable(record.port)
+      this.portStatusCache.set(id, { alive: isAvailable, checkedAt: now })
+    }
+
     const current = this.runtime.get(id)
     const nextStatus: SideCarStatus = isAvailable ? "running" : "stopped"
     if (current?.status === nextStatus) {

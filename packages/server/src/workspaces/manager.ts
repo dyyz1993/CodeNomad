@@ -15,6 +15,7 @@ import { searchWorkspaceFiles, WorkspaceFileSearchOptions } from "../filesystem/
 import { clearWorkspaceSearchCache } from "../filesystem/search-cache"
 import { WorkspaceDescriptor, WorkspaceFileResponse, FileSystemEntry } from "../api-types"
 import { WorkspaceRuntime, ProcessExitInfo } from "./runtime"
+import type { AutoContinueManager } from "./auto-continue"
 import { Logger } from "../logger"
 import { getOpencodeConfigDir } from "../opencode-config.js"
 import {
@@ -57,6 +58,7 @@ export class WorkspaceManager {
   private startupQueue: Array<() => void> = []
   private readonly lastActivityTime = new Map<string, number>()
   private readonly workspaceBusy = new Map<string, boolean>()
+  autoContinueManager?: AutoContinueManager
   private idleCheckTimer?: ReturnType<typeof setInterval>
 
   private async acquireStartupSlot(): Promise<void> {
@@ -291,6 +293,7 @@ export class WorkspaceManager {
     this.opencodeAuth.delete(id)
     this.lastActivityTime.delete(id)
     this.workspaceBusy.delete(id)
+    this.autoContinueManager?.removeWorkspaceSessions(id)
     clearWorkspaceSearchCache(workspace.path)
     if (!wasRunning) {
       this.options.eventBus.publish({ type: "workspace.stopped", workspaceId: id })
@@ -686,27 +689,32 @@ export class WorkspaceManager {
     const deadline = Date.now() + timeoutMs
 
     return new Promise<WorkspaceDescriptor>((resolve, reject) => {
+      let activeTimer: ReturnType<typeof setTimeout> | null = null
       const poll = () => {
         const current = this.workspaces.get(id)
         if (!current) {
+          if (activeTimer) clearTimeout(activeTimer)
           reject(new Error("Workspace not found"))
           return
         }
         if (current.status === "ready") {
+          if (activeTimer) clearTimeout(activeTimer)
           resolve(current)
           return
         }
         if (current.status === "error") {
+          if (activeTimer) clearTimeout(activeTimer)
           reject(new Error(current.error ?? "Workspace entered error state"))
           return
         }
         if (Date.now() >= deadline) {
+          if (activeTimer) clearTimeout(activeTimer)
           reject(new Error(`Workspace ${id} did not become ready within ${timeoutMs}ms`))
           return
         }
-        setTimeout(poll, pollIntervalMs)
+        activeTimer = setTimeout(poll, pollIntervalMs)
       }
-      setTimeout(poll, pollIntervalMs)
+      activeTimer = setTimeout(poll, pollIntervalMs)
     })
   }
 
