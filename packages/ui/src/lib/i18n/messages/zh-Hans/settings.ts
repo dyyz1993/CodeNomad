@@ -255,4 +255,9 @@ export const settingsMessages = {
   "settings.tunnel.disabled.success": "隧道服务已关闭，重启后生效。",
   "settings.tunnel.disabled.failed": "关闭隧道服务失败。",
   "settings.tunnel.disabling": "正在关闭隧道服务...",
+  "tunnel.viewer.title": "隧道查看器",
+  "tunnel.viewer.openExternal": "在新标签页中打开",
+  "tunnel.viewer.loading": "加载中...",
+  "tunnel.viewer.error": "加载失败: {error}",
+  "tunnel.viewer.connectionFailed": "连接失败",
 } as const

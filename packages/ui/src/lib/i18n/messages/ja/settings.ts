@@ -255,4 +255,9 @@ export const settingsMessages = {
   "settings.tunnel.disabled.success": "トンネルサービスを無効にしました。再起動後に反映されます。",
   "settings.tunnel.disabled.failed": "トンネルサービスの無効化に失敗しました。",
   "settings.tunnel.disabling": "トンネルサービスを無効にしています...",
+  "tunnel.viewer.title": "トンネルビューアー",
+  "tunnel.viewer.openExternal": "新しいタブで開く",
+  "tunnel.viewer.loading": "読み込み中...",
+  "tunnel.viewer.error": "読み込みに失敗しました: {error}",
+  "tunnel.viewer.connectionFailed": "接続に失敗しました",
 } as const

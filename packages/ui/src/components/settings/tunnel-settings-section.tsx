@@ -41,12 +41,16 @@ export const TunnelSettingsSection: Component = () => {
         setTunnelHubUrl(url)
         setSavedHubUrl(url)
       }
-    } catch {}
+    } catch {
+      // Config may not exist yet on first launch
+    }
 
     try {
       const status = await serverApi.fetchTunnelStatus()
       setTunnelStatus(status)
-    } catch {}
+    } catch {
+      // Tunnel status unavailable when server not reachable
+    }
   })
 
   const testTunnelConnection = async () => {
@@ -64,7 +68,9 @@ export const TunnelSettingsSection: Component = () => {
         try {
           await serverApi.patchConfigOwner("server", { tunnelHubUrl: url })
           setSavedHubUrl(url)
-        } catch {} finally {
+        } catch (saveErr) {
+          setTunnelTestResult({ connected: false, hubUrl: url, error: `Save failed: ${(saveErr as Error).message}` })
+        } finally {
           setSaving(false)
         }
       }

@@ -254,4 +254,9 @@ export const settingsMessages = {
   "settings.tunnel.disabled.success": "Tunnel service disabled. Changes take effect after restart.",
   "settings.tunnel.disabled.failed": "Failed to disable tunnel service.",
   "settings.tunnel.disabling": "Disabling tunnel service...",
+  "tunnel.viewer.title": "Tunnel Viewer",
+  "tunnel.viewer.openExternal": "Open in new tab",
+  "tunnel.viewer.loading": "Loading...",
+  "tunnel.viewer.error": "Failed to load: {error}",
+  "tunnel.viewer.connectionFailed": "Connection failed",
 } as const
