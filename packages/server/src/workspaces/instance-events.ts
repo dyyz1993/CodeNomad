@@ -45,6 +45,7 @@ export class InstanceEventBridge {
   private readonly streams = new Map<string, ActiveStream>()
   private readonly lastLogTime = new Map<string, number>()
   private readonly sessionLastBusyTime = new Map<string, number>()
+  private readonly sessionParentMap = new Map<string, boolean>()
   private silenceCheckTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(private readonly options: InstanceEventBridgeOptions) {
@@ -67,6 +68,7 @@ export class InstanceEventBridge {
       this.silenceCheckTimer = null
     }
     this.sessionLastBusyTime.clear()
+    this.sessionParentMap.clear()
   }
 
   private startStream(workspaceId: string) {
@@ -104,6 +106,7 @@ export class InstanceEventBridge {
     for (const key of this.sessionLastBusyTime.keys()) {
       if (key.startsWith(`${workspaceId}:`)) {
         this.sessionLastBusyTime.delete(key)
+        this.sessionParentMap.delete(key)
       }
     }
     this.publishStatus(workspaceId, "disconnected", reason)
@@ -308,6 +311,8 @@ export class InstanceEventBridge {
       if (sessionId) {
         const timerKey = `${workspaceId}:${sessionId}`
         this.sessionLastBusyTime.set(timerKey, Date.now())
+        const parentSessionId = event.properties?.parentSessionID as string | undefined
+        this.sessionParentMap.set(timerKey, !parentSessionId)
         this.ensureSilenceCheck()
       }
     }
@@ -342,14 +347,14 @@ export class InstanceEventBridge {
       this.options.workspaceManager.markIdle(workspaceId)
 
       if (this.options.autoContinueManager) {
-        const workspace = this.options.workspaceManager.get(workspaceId)
-        const isMainSession = !workspace
+        const isMainSession = this.sessionParentMap.get(timerKey) ?? false
         this.options.autoContinueManager.onSessionIdle(workspaceId, sessionId, isMainSession)
       }
     }
 
     for (const key of keysToRemove) {
       this.sessionLastBusyTime.delete(key)
+      this.sessionParentMap.delete(key)
     }
 
     if (this.sessionLastBusyTime.size === 0 && this.silenceCheckTimer) {
