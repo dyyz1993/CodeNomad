@@ -1,6 +1,6 @@
 import { For, Show, createEffect, createSignal, onCleanup } from "solid-js"
 import { Portal } from "solid-js/web"
-import { Copy, ListStart, Split, Trash, Undo } from "lucide-solid"
+import { Copy, ListStart, RefreshCw, Split, Trash, Undo } from "lucide-solid"
 import type { MessageInfo, ClientPart, SDKAssistantMessageV2 } from "../types/message"
 import { isHiddenSyntheticTextPart, partHasRenderableText } from "../types/message"
 import type { MessageRecord } from "../stores/message-v2/types"
@@ -338,7 +338,40 @@ export default function MessageItem(props: MessageItemProps) {
     }
   }
 
+  const isAutoContinueMessage = () => {
+    if (!isUser()) return false
+    const parts = messageParts()
+    if (parts.length === 0) return false
+    return parts.every((p) => isHiddenSyntheticTextPart(p))
+  }
+
   if (!hasContent() && !isGenerating()) {
+    if (isAutoContinueMessage()) {
+      return (
+        <div
+          class="message-item-base message-item-auto-continue"
+          data-view="message-item"
+          data-instance-id={props.instanceId}
+          data-session-id={props.sessionId}
+          data-message-id={props.record.id}
+          data-message-role={isUser() ? "user" : "assistant"}
+          data-message-status={props.record.status}
+        >
+          <header class="message-item-header pb-0">
+            <div class="message-item-header-row message-item-header-row--top">
+              <div class="message-header-left">
+                <div class="message-speaker-primary">
+                  <span class="message-speaker-label" data-role="auto-continue">
+                    <RefreshCw class="w-3 h-3" style={{ "display": "inline-block", "vertical-align": "middle", "margin-right": "0.25rem" }} />
+                    {t("autoContinue.label")}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </header>
+        </div>
+      )
+    }
     return null
   }
 

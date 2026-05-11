@@ -80,3 +80,5 @@
   outline: none;
   border-color: var(--accent, #6366f1);
 }
+
+@import "./auto-continue-indicator.css";
