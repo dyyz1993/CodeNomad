@@ -272,8 +272,9 @@ async function proxyWorkspaceRequest(args: {
         errorMsg.includes('UndiciSocketError')
 
       if (isConnectionError) {
-        logger.warn({ workspaceId, targetUrl, errorCode, errorName, err: errorMsg }, 'Instance connection error, triggering recovery')
-        if (!workspaceManager.isWorkspaceBusy(workspaceId) && !recoveringWorkspaces.has(workspaceId)) {
+        const currentWorkspace = workspaceManager.get(workspaceId)
+        if (currentWorkspace?.pid == null && currentWorkspace?.status !== 'starting' && !recoveringWorkspaces.has(workspaceId)) {
+          logger.warn({ workspaceId, targetUrl, errorCode, errorName, err: errorMsg }, 'Instance connection error, process appears dead, triggering recovery')
           recoveringWorkspaces.add(workspaceId)
           workspaceManager
             .suspendWorkspace(workspaceId)
@@ -281,6 +282,8 @@ async function proxyWorkspaceRequest(args: {
             .then(() => logger.info({ workspaceId }, 'Workspace recovered after connection error'))
             .catch((e) => logger.warn({ workspaceId, err: e }, 'Failed to recover workspace'))
             .finally(() => { recoveringWorkspaces.delete(workspaceId) })
+        } else {
+          logger.warn({ workspaceId, targetUrl, errorCode, errorName, err: errorMsg }, 'Instance connection error, process still alive - returning 503')
         }
         if (!proxyReply.sent) {
           proxyReply
