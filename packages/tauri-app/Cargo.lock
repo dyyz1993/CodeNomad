@@ -497,7 +497,7 @@ dependencies = [
 
 [[package]]
 name = "codenomad-tauri"
-version = "0.15.33"
+version = "0.15.34"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
