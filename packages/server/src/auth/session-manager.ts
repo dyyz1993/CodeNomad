@@ -1,8 +1,9 @@
 import crypto from "crypto"
 import os from "os"
 import path from "path"
-import { readFile, writeFile, mkdir } from "node:fs/promises"
+import { readFile, writeFile, mkdir, rename } from "node:fs/promises"
 import { existsSync } from "node:fs"
+import type { Logger } from "../logger"
 
 const SESSION_TTL_MS = 315360000 * 1000 // 10 years in ms
 const CLEANUP_INTERVAL_MS = 30 * 60 * 1000
@@ -17,12 +18,14 @@ export class SessionManager {
   private sessions = new Map<string, SessionInfo>()
   private cleanupTimer?: ReturnType<typeof setInterval>
   private readonly stateFilePath: string
+  private readonly logger: Logger
 
-  constructor(configDir?: string) {
+  constructor(configDir?: string, logger?: Logger) {
     this.stateFilePath = path.join(
       configDir ?? path.join(os.homedir(), ".config", "codenomad"),
       "sessions-state.json",
     )
+    this.logger = logger ?? { warn: (...args: any[]) => console.warn("[session-manager]", ...args) } as any
     void this.loadState()
     this.cleanupTimer = setInterval(() => this.cleanupExpired(), CLEANUP_INTERVAL_MS)
   }
@@ -78,9 +81,11 @@ export class SessionManager {
     }))
     try {
       await mkdir(path.dirname(this.stateFilePath), { recursive: true })
-      await writeFile(this.stateFilePath, JSON.stringify(data, null, 2), "utf-8")
+      const tmpPath = this.stateFilePath + ".tmp"
+      await writeFile(tmpPath, JSON.stringify(data, null, 2), "utf-8")
+      await rename(tmpPath, this.stateFilePath)
     } catch (error) {
-      console.error("Failed to save session state", error)
+      this.logger.warn({ err: error }, "Failed to save session state")
     }
   }
 
@@ -101,7 +106,7 @@ export class SessionManager {
         })
       }
     } catch (error) {
-      console.error("Failed to load session state", error)
+      this.logger.warn({ err: error }, "Failed to load session state")
     }
   }
 

@@ -32,7 +32,7 @@ export class AuthManager {
 
     const configDir = path.dirname(path.resolve(init.configPath.replace(/^~/, process.env.HOME ?? "")))
 
-    this.sessionManager = new SessionManager(configDir)
+    this.sessionManager = new SessionManager(configDir, logger.child({ component: "session" }))
 
     if (!this.authEnabled) {
       this.authStore = null

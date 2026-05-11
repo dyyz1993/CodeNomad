@@ -164,7 +164,7 @@ export class AuthStore {
   private persist(auth: AuthFile) {
     try {
       fs.mkdirSync(path.dirname(this.authFilePath), { recursive: true })
-      fs.writeFileSync(this.authFilePath, JSON.stringify(auth, null, 2), "utf-8")
+      fs.writeFileSync(this.authFilePath, JSON.stringify(auth, null, 2), { encoding: "utf-8", mode: 0o600 })
       this.cachedFile = auth
       this.logger.debug({ authFilePath: this.authFilePath }, "Persisted auth file")
     } catch (error) {

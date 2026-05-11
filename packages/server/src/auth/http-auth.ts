@@ -18,8 +18,9 @@ export function parseCookies(header: string | undefined): Record<string, string>
 
 export function isLoopbackAddress(remoteAddress: string | undefined): boolean {
   if (!remoteAddress) return false
-  if (remoteAddress === "127.0.0.1" || remoteAddress === "::1") return true
-  if (remoteAddress === "::ffff:127.0.0.1") return true
+  if (remoteAddress.startsWith("127.")) return true
+  if (remoteAddress === "::1") return true
+  if (remoteAddress.startsWith("::ffff:127.")) return true
   return false
 }
 
