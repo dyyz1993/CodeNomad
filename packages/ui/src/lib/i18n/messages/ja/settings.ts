@@ -247,4 +247,12 @@ export const settingsMessages = {
   "settings.tunnel.activeTunnels.title": "Active Tunnels",
   "settings.tunnel.activeTunnels.subtitle": "Currently active tunnel connections.",
   "settings.tunnel.activeTunnels.count": "{count} active tunnel(s)",
+  "settings.tunnel.toggle.title": "トンネルサービス",
+  "settings.tunnel.toggle.on": "オン",
+  "settings.tunnel.toggle.off": "オフ",
+  "settings.tunnel.toggle.caption.enabled": "トンネルサービスは有効です。無効にするとローカルサービスの公開を停止します。",
+  "settings.tunnel.toggle.caption.disabled": "有効にすると、トンネルハブを経由してローカルサービスをインターネットに公開できます。",
+  "settings.tunnel.disabled.success": "トンネルサービスを無効にしました。再起動後に反映されます。",
+  "settings.tunnel.disabled.failed": "トンネルサービスの無効化に失敗しました。",
+  "settings.tunnel.disabling": "トンネルサービスを無効にしています...",
 } as const

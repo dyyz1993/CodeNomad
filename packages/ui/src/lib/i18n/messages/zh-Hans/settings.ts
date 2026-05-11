@@ -247,4 +247,12 @@ export const settingsMessages = {
   "settings.tunnel.activeTunnels.title": "Active Tunnels",
   "settings.tunnel.activeTunnels.subtitle": "Currently active tunnel connections.",
   "settings.tunnel.activeTunnels.count": "{count} active tunnel(s)",
+  "settings.tunnel.toggle.title": "隧道服务",
+  "settings.tunnel.toggle.on": "开",
+  "settings.tunnel.toggle.off": "关",
+  "settings.tunnel.toggle.caption.enabled": "隧道服务已启用。关闭后将停止暴露本地服务。",
+  "settings.tunnel.toggle.caption.disabled": "启用后可通过隧道枢纽将本地服务暴露到公网。",
+  "settings.tunnel.disabled.success": "隧道服务已关闭，重启后生效。",
+  "settings.tunnel.disabled.failed": "关闭隧道服务失败。",
+  "settings.tunnel.disabling": "正在关闭隧道服务...",
 } as const

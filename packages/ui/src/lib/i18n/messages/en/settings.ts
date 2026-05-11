@@ -248,4 +248,12 @@ export const settingsMessages = {
   "settings.tunnel.activeTunnels.title": "Active Tunnels",
   "settings.tunnel.activeTunnels.subtitle": "Currently active tunnel connections.",
   "settings.tunnel.activeTunnels.count": "{count} active tunnel(s)",
+  "settings.tunnel.toggle.title": "Tunnel Service",
+  "settings.tunnel.toggle.on": "On",
+  "settings.tunnel.toggle.off": "Off",
+  "settings.tunnel.toggle.caption.enabled": "Tunnel service is enabled. Disable to stop exposing local services.",
+  "settings.tunnel.toggle.caption.disabled": "Enable to expose local services to the public internet via a tunnel hub.",
+  "settings.tunnel.disabled.success": "Tunnel service disabled. Changes take effect after restart.",
+  "settings.tunnel.disabled.failed": "Failed to disable tunnel service.",
+  "settings.tunnel.disabling": "Disabling tunnel service...",
 } as const
