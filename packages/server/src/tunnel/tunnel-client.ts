@@ -26,6 +26,10 @@ export class TunnelClient {
   private readonly tunnels = new Map<string, ActiveTunnel>()
   private readonly config: TunnelConfig
   private readonly logger: Logger
+  private readonly reconnectAttempts = new Map<string, number>()
+  private static readonly RECONNECT_BASE_DELAY_MS = 5000
+  private static readonly RECONNECT_MAX_DELAY_MS = 300000
+  private static readonly RECONNECT_MAX_ATTEMPTS = 20
 
   constructor(config: TunnelConfig, logger: Logger) {
     this.config = config
@@ -156,13 +160,31 @@ export class TunnelClient {
           tunnel.ws = null
           this.logger.info({ tunnel: tunnel.info.id }, "Tunnel relay disconnected")
 
+          const attempts = (this.reconnectAttempts.get(key) ?? 0) + 1
+          if (attempts > TunnelClient.RECONNECT_MAX_ATTEMPTS) {
+            this.logger.error(
+              { tunnel: tunnel.info.id, attempts },
+              "Tunnel relay max reconnect attempts reached, giving up",
+            )
+            this.reconnectAttempts.delete(key)
+            return
+          }
+          this.reconnectAttempts.set(key, attempts)
+
+          const delay = Math.min(
+            TunnelClient.RECONNECT_BASE_DELAY_MS * Math.pow(2, attempts - 1),
+            TunnelClient.RECONNECT_MAX_DELAY_MS,
+          )
+
           setTimeout(() => {
             if (this.tunnels.has(key) && !tunnel.ws) {
-              this.connectRelay(key, tunnel).catch((err) => {
-                this.logger.warn({ err, key }, "Tunnel relay reconnect failed")
+              this.connectRelay(key, tunnel).then(() => {
+                this.reconnectAttempts.delete(key)
+              }).catch((err) => {
+                this.logger.warn({ err, key, attempts }, "Tunnel relay reconnect failed")
               })
             }
-          }, 5000)
+          }, delay)
         })
 
         ws.on("error", (err) => {
