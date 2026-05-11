@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js"
 import { Dialog } from "@kobalte/core/dialog"
 import { useI18n } from "../lib/i18n"
+import { copyToClipboard } from "../lib/clipboard"
 
 interface TunnelViewerProps {
   open: boolean
@@ -13,13 +14,31 @@ export function TunnelViewer(props: TunnelViewerProps) {
   const { t } = useI18n()
   const [loading, setLoading] = createSignal(true)
   const [error, setError] = createSignal<string | null>(null)
+  const [copied, setCopied] = createSignal(false)
+
+  const handleCopyUrl = async () => {
+    const ok = await copyToClipboard(props.url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+    return ok
+  }
+
+  const handleRefresh = () => {
+    setLoading(true)
+    setError(null)
+    const iframe = document.querySelector(".tunnel-viewer-iframe") as HTMLIFrameElement | null
+    if (iframe) {
+      iframe.src = props.url
+    }
+  }
 
   return (
     <Dialog open={props.open} onOpenChange={(open) => !open && props.onClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay class="modal-overlay" />
+        <Dialog.Overlay class="modal-overlay z-[100]" />
         <Dialog.Content
           class="modal-surface tunnel-viewer-dialog"
+          style={{ "z-index": 101 }}
         >
           <div class="tunnel-viewer-header">
             <div class="tunnel-viewer-title-row">
@@ -29,14 +48,25 @@ export function TunnelViewer(props: TunnelViewerProps) {
               </Dialog.Title>
             </div>
             <div class="tunnel-viewer-actions">
-              <a
-                href={props.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="tunnel-viewer-external-link"
+              <button
+                class="tunnel-viewer-action-btn"
+                onClick={() => window.open(props.url, "_blank")}
               >
-                {t("tunnel.viewer.openExternal")} ↗
-              </a>
+                ↗ {t("tunnel.viewer.openExternal")}
+              </button>
+              <button
+                class="tunnel-viewer-action-btn tunnel-viewer-copy-btn"
+                onClick={() => handleCopyUrl()}
+                data-copied={copied()}
+              >
+                {copied() ? "✓" : "📋"}
+              </button>
+              <button
+                class="tunnel-viewer-action-btn"
+                onClick={handleRefresh}
+              >
+                🔄
+              </button>
               <button
                 onClick={props.onClose}
                 class="tunnel-viewer-close-btn"
@@ -57,14 +87,10 @@ export function TunnelViewer(props: TunnelViewerProps) {
 
           <div class="tunnel-viewer-content">
             {loading() && (
-              <div class="tunnel-viewer-loading">
-                {t("tunnel.viewer.loading")}
-              </div>
+              <div class="tunnel-viewer-loading">{t("tunnel.viewer.loading")}</div>
             )}
             {error() && (
-              <div class="tunnel-viewer-error">
-                {t("tunnel.viewer.error", { error: error() })}
-              </div>
+              <div class="tunnel-viewer-error">{t("tunnel.viewer.error", { error: error() })}</div>
             )}
             <iframe
               src={props.url}

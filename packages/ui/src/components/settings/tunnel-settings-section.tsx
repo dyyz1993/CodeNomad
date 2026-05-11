@@ -83,6 +83,26 @@ export const TunnelSettingsSection: Component = () => {
 
   const handleToggle = async (checked: boolean) => {
     if (checked) {
+      const url = tunnelHubUrl().trim()
+      if (!url) return
+      setSaving(true)
+      try {
+        await serverApi.patchConfigOwner("server", { tunnelHubUrl: url })
+        setSavedHubUrl(url)
+        showToastNotification({
+          message: t("settings.tunnel.disabled.success"),
+          variant: "success",
+          duration: 3000,
+        })
+      } catch {
+        showToastNotification({
+          message: t("settings.tunnel.disabled.failed"),
+          variant: "error",
+          duration: 5000,
+        })
+      } finally {
+        setSaving(false)
+      }
       return
     }
 
@@ -90,7 +110,6 @@ export const TunnelSettingsSection: Component = () => {
     try {
       await serverApi.patchConfigOwner("server", { tunnelHubUrl: "" })
       setSavedHubUrl("")
-      setTunnelHubUrl("")
       setTunnelTestResult(null)
       showToastNotification({
         message: t("settings.tunnel.disabled.success"),
@@ -147,9 +166,8 @@ export const TunnelSettingsSection: Component = () => {
             </Switch>
           </div>
         </div>
-      </div>
+        </div>
 
-      <Show when={isEnabled()}>
         <div class="settings-card">
           <div class="settings-card-header">
             <div>
@@ -164,7 +182,7 @@ export const TunnelSettingsSection: Component = () => {
                 <input
                   class="selector-input tunnel-url-input"
                   type="text"
-                  placeholder="https://tunnel.yourdomain.com"
+                  placeholder="https://api.tunnel.yourdomain.com"
                   value={tunnelHubUrl()}
                   onInput={(e) => {
                     setTunnelHubUrl(e.currentTarget.value)
@@ -174,7 +192,7 @@ export const TunnelSettingsSection: Component = () => {
                 <button
                   type="button"
                   class="selector-button selector-button-secondary"
-                  disabled={testingTunnel() || !tunnelHubUrl().trim() || !hasUnsavedChanges()}
+                  disabled={testingTunnel() || !tunnelHubUrl().trim()}
                   onClick={() => void testTunnelConnection()}
                 >
                   <Show when={testingTunnel()} fallback={<Link2 class="w-4 h-4" />}>
@@ -204,9 +222,8 @@ export const TunnelSettingsSection: Component = () => {
             </Show>
           </div>
         </div>
-      </Show>
 
-      <Show when={tunnelStatus()?.enabled}>
+      <Show when={isEnabled()}>
         <div class="settings-card">
           <div class="settings-card-header">
             <div>
