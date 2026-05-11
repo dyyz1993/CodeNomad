@@ -644,9 +644,7 @@ async function loadMessages(instanceId: string, sessionId: string, force = false
   }
 
   const alreadyLoaded = messagesLoaded().get(instanceId)?.has(sessionId)
-  const store = messageStoreBus.getInstance(instanceId)
-  const hasMessages = store ? store.getSessionMessageIds(sessionId).length > 0 : false
-  if (alreadyLoaded && !force && hasMessages) {
+  if (alreadyLoaded && !force) {
     return
   }
 

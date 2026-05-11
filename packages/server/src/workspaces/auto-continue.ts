@@ -1,6 +1,10 @@
 import { fetch } from "undici"
 import type { Logger } from "pino"
 import type { WorkspaceManager } from "./manager"
+import os from "os"
+import path from "path"
+import { readFile, writeFile, mkdir, rename } from "node:fs/promises"
+import { existsSync } from "node:fs"
 
 interface AutoContinueConfig {
   enabled: boolean
@@ -30,12 +34,27 @@ const DEFAULT_CONFIG: AutoContinueConfig = {
 export class AutoContinueManager {
   private readonly sessions = new Map<string, SessionAutoContinueState>()
   private readonly logger: Logger
+  private readonly stateFilePath: string
+  private loadStatePromise: Promise<void> | null = null
 
   constructor(
     logger: Logger,
     private readonly workspaceManager: WorkspaceManager,
+    configDir?: string,
   ) {
     this.logger = logger.child({ component: "auto-continue" })
+    this.stateFilePath = path.join(
+      configDir ?? path.join(os.homedir(), ".config", "codenomad"),
+      "auto-continue-state.json",
+    )
+    this.loadStatePromise = this.loadState()
+  }
+
+  async ready(): Promise<void> {
+    if (this.loadStatePromise) {
+      await this.loadStatePromise
+      this.loadStatePromise = null
+    }
   }
 
   private key(workspaceId: string, sessionId: string): string {
@@ -60,7 +79,56 @@ export class AutoContinueManager {
       this.sessions.set(k, state)
     }
     Object.assign(state.config, updates)
+    void this.saveState()
     return state.config
+  }
+
+  private async saveState(): Promise<void> {
+    const data = Array.from(this.sessions.entries()).map(([key, state]) => ({
+      key,
+      workspaceId: key.split(":")[0],
+      sessionId: key.split(":")[1],
+      config: state.config,
+      triggerCount: state.triggerCount,
+      lastTriggerAt: state.lastTriggerAt,
+    }))
+    try {
+      await mkdir(path.dirname(this.stateFilePath), { recursive: true })
+      const tmpPath = this.stateFilePath + ".tmp"
+      await writeFile(tmpPath, JSON.stringify(data, null, 2), "utf-8")
+      await rename(tmpPath, this.stateFilePath)
+    } catch (err) {
+      this.logger.warn({ err }, "Failed to save auto-continue state")
+    }
+  }
+
+  private async loadState(): Promise<void> {
+    try {
+      if (!existsSync(this.stateFilePath)) return
+      const content = await readFile(this.stateFilePath, "utf-8")
+      const entries = JSON.parse(content) as Array<{
+        key: string
+        workspaceId: string
+        sessionId: string
+        config: AutoContinueConfig
+        triggerCount: number
+        lastTriggerAt: number
+      }>
+      for (const entry of entries) {
+        this.sessions.set(entry.key, {
+          config: entry.config,
+          triggerCount: entry.triggerCount,
+          lastTriggerAt: entry.lastTriggerAt,
+          confirmTimer: null,
+          idleCheckCount: 0,
+        })
+      }
+      if (entries.length > 0) {
+        this.logger.info({ count: entries.length }, "Restored auto-continue state from disk")
+      }
+    } catch (err) {
+      this.logger.warn({ err }, "Failed to load auto-continue state")
+    }
   }
 
   getState(workspaceId: string, sessionId: string): {
@@ -78,10 +146,24 @@ export class AutoContinueManager {
   }
 
   onSessionIdle(workspaceId: string, sessionId: string, isMainSession: boolean): void {
-    if (!isMainSession) return
+    this.logger.info({ workspaceId, sessionId, isMainSession }, "AutoContinue.onSessionIdle called")
+
+    if (!isMainSession) {
+      this.logger.debug({ workspaceId, sessionId }, "AutoContinue skipped: not main session")
+      return
+    }
 
     const k = this.key(workspaceId, sessionId)
     const state = this.sessions.get(k)
+
+    this.logger.debug({
+      workspaceId,
+      sessionId,
+      stateExists: !!state,
+      enabled: state?.config.enabled,
+      triggerCount: state?.triggerCount
+    }, "AutoContinue state check")
+
     if (!state || !state.config.enabled) return
 
     state.idleCheckCount = 0
@@ -90,6 +172,7 @@ export class AutoContinueManager {
       clearTimeout(state.confirmTimer)
     }
 
+    this.logger.info({ workspaceId, sessionId }, "AutoContinue starting confirmation timer")
     this.startIdleConfirmation(workspaceId, sessionId, state)
   }
 
@@ -114,6 +197,13 @@ export class AutoContinueManager {
 
     const check = () => {
       state.idleCheckCount++
+
+      this.logger.debug({
+        workspaceId,
+        sessionId,
+        idleCheckCount: state.idleCheckCount,
+        requiredChecks
+      }, "AutoContinue idle confirmation check")
 
       if (state.idleCheckCount >= requiredChecks) {
         this.triggerAutoContinue(workspaceId, sessionId, state)

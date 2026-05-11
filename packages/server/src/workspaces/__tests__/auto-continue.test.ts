@@ -1,6 +1,10 @@
 import assert from "node:assert/strict"
 import { afterEach, describe, it } from "node:test"
 import { AutoContinueManager } from "../auto-continue"
+import { mkdir, rm } from "node:fs/promises"
+import { randomUUID } from "node:crypto"
+import path from "node:path"
+import os from "os"
 
 type MockWorkspaceManager = {
   getInstancePort: () => number | undefined
@@ -290,6 +294,81 @@ describe("AutoContinueManager", () => {
       manager = new AutoContinueManager(createMockLogger(), wsManager as any)
 
       assert.doesNotThrow(() => manager.onSessionBusy("ws1", "unknown"))
+    })
+  })
+
+  describe("persistence", () => {
+    let testConfigDir: string
+
+    afterEach(async () => {
+      if (testConfigDir) {
+        await rm(testConfigDir, { recursive: true, force: true }).catch(() => {})
+      }
+    })
+
+    it("persists and restores config across instances", async () => {
+      testConfigDir = path.join(os.tmpdir(), `auto-continue-test-${randomUUID()}`)
+      await mkdir(testConfigDir, { recursive: true })
+
+      const wsManager = createMockWorkspaceManager()
+      manager = new AutoContinueManager(createMockLogger(), wsManager as any, testConfigDir)
+      await manager.ready()
+
+      const config1 = manager.setConfig("ws1", "s1", {
+        enabled: true,
+        prompt: "Test prompt",
+        cooldownMs: 30_000,
+        maxTriggers: 10,
+        confirmSeconds: 3,
+      })
+
+      assert.equal(config1.enabled, true)
+      assert.equal(config1.prompt, "Test prompt")
+
+      manager.dispose()
+
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      const manager2 = new AutoContinueManager(createMockLogger(), wsManager as any, testConfigDir)
+      await manager2.ready()
+      const config2 = manager2.getConfig("ws1", "s1")
+
+      assert.equal(config2.enabled, true)
+      assert.equal(config2.prompt, "Test prompt")
+      assert.equal(config2.cooldownMs, 30_000)
+      assert.equal(config2.maxTriggers, 10)
+      assert.equal(config2.confirmSeconds, 3)
+
+      manager2.dispose()
+    })
+
+    it("restores trigger count and last trigger time", async () => {
+      testConfigDir = path.join(os.tmpdir(), `auto-continue-test-${randomUUID()}`)
+      await mkdir(testConfigDir, { recursive: true })
+
+      const wsManager = createMockWorkspaceManager()
+      manager = new AutoContinueManager(createMockLogger(), wsManager as any, testConfigDir)
+      await manager.ready()
+
+      manager.setConfig("ws1", "s1", { enabled: true })
+
+      const state1 = manager.getState("ws1", "s1")
+      assert.notEqual(state1, null)
+      assert.equal(state1!.triggerCount, 0)
+      assert.equal(state1!.lastTriggerAt, 0)
+
+      manager.dispose()
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      const manager2 = new AutoContinueManager(createMockLogger(), wsManager as any, testConfigDir)
+      await manager2.ready()
+      const state2 = manager2.getState("ws1", "s1")
+
+      assert.notEqual(state2, null)
+      assert.equal(state2!.triggerCount, 0)
+      assert.equal(state2!.lastTriggerAt, 0)
+
+      manager2.dispose()
     })
   })
 })
