@@ -115,4 +115,4 @@ jobs:
           else
             echo "Using NPM_TOKEN authentication"
           fi
-          node "$PINNED_NPM_CLI" publish --workspace packages/server --access public --tag ${DIST_TAG} --provenance
+          node "$PINNED_NPM_CLI" publish --workspace packages/server --access public --tag ${DIST_TAG}
