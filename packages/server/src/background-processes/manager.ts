@@ -84,19 +84,24 @@ export class BackgroundProcessManager {
     const processDir = await this.ensureProcessDir(workspaceId, id)
     const outputPath = path.join(processDir, OUTPUT_FILE)
 
-    const outputStream = createWriteStream(outputPath, { flags: "a" })
-
     const { shellCommand, shellArgs, spawnOptions } = this.buildShellSpawn(command)
 
-    const child = spawn(shellCommand, shellArgs, {
-      cwd: workspace.path,
-      stdio: ["ignore", "pipe", "pipe"],
-      detached: process.platform !== "win32",
-      ...spawnOptions,
-    })
+    let child: ChildProcess
+    try {
+      child = spawn(shellCommand, shellArgs, {
+        cwd: workspace.path,
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: process.platform !== "win32",
+        ...spawnOptions,
+      })
+    } catch (spawnError) {
+      throw spawnError
+    }
+
+    const outputStream = createWriteStream(outputPath, { flags: "a" })
 
     child.on("exit", () => {
-      this.killProcessTree(child, "SIGTERM")
+      this.deps.logger.debug({ pid: child.pid }, "Background process exited")
     })
 
     const record: PersistedBackgroundProcess = {
@@ -444,6 +449,9 @@ export class BackgroundProcessManager {
   }
 
   private grepLines(input: string, pattern: string): string {
+    if (pattern.length > 256) {
+      throw new Error("Grep pattern too long (max 256 characters)")
+    }
     let matcher: RegExp
     try {
       matcher = new RegExp(pattern)
@@ -452,7 +460,10 @@ export class BackgroundProcessManager {
     }
     return input
       .split(/\r?\n/)
-      .filter((line) => matcher.test(line))
+      .filter((line) => {
+        const result = matcher.exec(line)
+        return result !== null
+      })
       .join("\n")
   }
 
