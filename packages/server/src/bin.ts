@@ -27,3 +27,9 @@ child.on("error", (error) => {
   console.error("Failed to launch CLI runtime", error)
   process.exit(1)
 })
+
+const forwardSignal = (signal: NodeJS.Signals) => {
+  child.kill(signal)
+}
+process.on("SIGTERM", () => forwardSignal("SIGTERM"))
+process.on("SIGINT", () => forwardSignal("SIGINT"))
