@@ -36,8 +36,6 @@ export class AutoContinueManager {
   private readonly logger: Logger
   private readonly stateFilePath: string
   private loadStatePromise: Promise<void> | null = null
-  private activeTriggerCount = 0
-  private static readonly MAX_CONCURRENT_TRIGGERS = 1
 
   constructor(
     logger: Logger,
@@ -224,11 +222,6 @@ export class AutoContinueManager {
   ): Promise<void> {
     state.confirmTimer = null
 
-    if (this.activeTriggerCount >= AutoContinueManager.MAX_CONCURRENT_TRIGGERS) {
-      this.logger.debug({ workspaceId, sessionId }, "Auto-continue skipped: global concurrency budget exceeded")
-      return
-    }
-
     const now = Date.now()
     if (now - state.lastTriggerAt < state.config.cooldownMs) {
       this.logger.debug({ workspaceId, sessionId }, "Auto-continue skipped: cooldown not met")
@@ -261,7 +254,6 @@ export class AutoContinueManager {
     }
     if (auth) headers.authorization = auth
 
-    this.activeTriggerCount++
     try {
       const targetUrl = `http://127.0.0.1:${port}/session/${encodeURIComponent(sessionId)}/prompt_async`
       this.logger.info({ workspaceId, sessionId }, "Auto-continue: sending prompt")
@@ -289,8 +281,6 @@ export class AutoContinueManager {
       }
     } catch (error) {
       this.logger.error({ workspaceId, sessionId, err: error }, "Auto-continue: error sending prompt")
-    } finally {
-      this.activeTriggerCount--
     }
   }
 
