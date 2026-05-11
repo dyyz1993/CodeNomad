@@ -22,10 +22,49 @@ const [viewerTitle, setViewerTitle] = createSignal("")
 const [tunnels, setTunnels] = createSignal<TunnelInfo[]>([])
 const [tunnelEnabled, setTunnelEnabled] = createSignal(false)
 
-export function openTunnelViewer(url: string, title?: string) {
+function parseLocalUrl(url: string): { host: string; port: number; path: string } | null {
+  try {
+    const u = new URL(url)
+    const port = u.port ? parseInt(u.port, 10) : u.protocol === "https:" ? 443 : 80
+    if (["localhost", "127.0.0.1"].includes(u.hostname) ||
+        /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(u.hostname)) {
+      return { host: u.hostname, port, path: u.pathname + u.search }
+    }
+  } catch { /* ignore */ }
+  return null
+}
+
+export async function openTunnelViewer(url: string, title?: string) {
   setViewerUrl(url)
   setViewerTitle(title || url)
   setViewerOpen(true)
+}
+
+export async function ensureTunnelAndViewer(localUrl: string) {
+  const parsed = parseLocalUrl(localUrl)
+  if (!parsed) {
+    openTunnelViewer(localUrl)
+    return
+  }
+
+  const key = `${parsed.host}:${parsed.port}`
+  const existing = tunnels().find(
+    (t) => t.targetHost === parsed.host && t.targetPort === parsed.port && t.status === "connected"
+  )
+
+  let publicUrl = localUrl
+  if (existing) {
+    publicUrl = `${existing.publicUrl}${parsed.path}`
+  } else {
+    try {
+      const tunnel = await createTunnel(parsed.host, parsed.port, key)
+      if (tunnel?.publicUrl) {
+        publicUrl = `${tunnel.publicUrl}${parsed.path}`
+      }
+    } catch { /* fall back to local URL */ }
+  }
+
+  openTunnelViewer(publicUrl, localUrl)
 }
 
 export function closeTunnelViewer() {

@@ -12,6 +12,8 @@ import InstanceShell from "./components/instance/instance-shell2"
 import { SettingsScreen } from "./components/settings-screen"
 import { SideCarPickerDialog } from "./components/sidecar-picker-dialog"
 import { SideCarView } from "./components/sidecar-view"
+import { TunnelViewer } from "./components/tunnel-viewer"
+import { viewerOpen, viewerUrl, viewerTitle, closeTunnelViewer } from "./stores/tunnel"
 import { InstanceMetadataProvider } from "./lib/contexts/instance-metadata-context"
 import { showAlertDialog } from "./stores/alerts"
 import { initGithubStars } from "./stores/github-stars"
@@ -617,6 +619,12 @@ const App: Component = () => {
         </Show>
  
         <SettingsScreen />
+        <TunnelViewer
+          open={viewerOpen()}
+          onClose={closeTunnelViewer}
+          url={viewerUrl()}
+          title={viewerTitle()}
+        />
         <SideCarPickerDialog open={sidecarPickerOpen()} onClose={() => setSidecarPickerOpen(false)} onOpenSidecar={handleOpenSidecar} />
  
         <AlertDialog />

@@ -209,8 +209,8 @@ export function Markdown(props: MarkdownProps) {
       const tunnelLink = target.closest("a.tunnel-link") as HTMLAnchorElement | null
       if (tunnelLink?.dataset.tunnelUrl) {
         event.preventDefault()
-        const { openTunnelViewer } = await import("../stores/tunnel")
-        openTunnelViewer(tunnelLink.dataset.tunnelUrl)
+        const { ensureTunnelAndViewer } = await import("../stores/tunnel")
+        ensureTunnelAndViewer(tunnelLink.dataset.tunnelUrl)
         return
       }
 
