@@ -1,3 +1,4 @@
+import crypto from "crypto"
 import os from "os"
 import path from "path"
 import { readFile, writeFile, mkdir, rename } from "node:fs/promises"
@@ -76,6 +77,8 @@ export class WorkspaceManager {
     }
   }
 
+  private stateLoaded: Promise<void> = Promise.resolve()
+
   constructor(private readonly options: WorkspaceManagerOptions) {
     this.runtime = new WorkspaceRuntime(this.options.eventBus, this.options.logger)
     this.opencodeConfigDir = getOpencodeConfigDir()
@@ -83,8 +86,12 @@ export class WorkspaceManager {
       this.options.configDir ?? path.join(os.homedir(), ".config", "codenomad"),
       "workspaces-state.json",
     )
-    void this.loadState()
+    this.stateLoaded = this.loadState()
     this.startIdleCheck()
+  }
+
+  async ready(): Promise<void> {
+    await this.stateLoaded
   }
 
   private async saveState(): Promise<void> {
@@ -181,7 +188,7 @@ export class WorkspaceManager {
 
   async create(folder: string, name?: string): Promise<WorkspaceDescriptor> {
     await this.acquireStartupSlot()
-    const id = `${Date.now().toString(36)}`
+    const id = `${Date.now().toString(36)}${crypto.randomBytes(4).toString("hex")}`
     const binary = await this.options.binaryResolver.resolveDefault()
     const resolvedBinaryPath = await resolveBinaryPath(binary.path, this.options.logger)
     const workspacePath = path.isAbsolute(folder) ? folder : path.resolve(this.options.rootDir, folder)
@@ -410,7 +417,7 @@ export class WorkspaceManager {
 
   private async checkIdleWorkspaces(): Promise<void> {
     const now = Date.now()
-    for (const [id, lastTime] of this.lastActivityTime) {
+    for (const [id, lastTime] of Array.from(this.lastActivityTime.entries())) {
       const workspace = this.workspaces.get(id)
       if (!workspace || workspace.status !== "ready") continue
 
@@ -557,6 +564,7 @@ export class WorkspaceManager {
 
     for (const [id, lastTime] of this.lastActivityTime) {
       if (id === excludeId) continue
+      if (this.workspaceBusy.get(id) === true) continue
       const workspace = this.workspaces.get(id)
       if (!workspace || workspace.status !== "ready") continue
       if (lastTime < lruTime) {

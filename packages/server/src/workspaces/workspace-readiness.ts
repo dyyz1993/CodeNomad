@@ -3,6 +3,8 @@ import type { Logger } from "../logger"
 import type { ProcessExitInfo } from "./runtime"
 
 const STARTUP_STABILITY_DELAY_MS = 300
+const HEALTH_PROBE_MAX_ATTEMPTS = 5
+const HEALTH_PROBE_RETRY_DELAY_MS = 500
 
 export function delay(durationMs: number): Promise<void> {
   if (durationMs <= 0) {
@@ -125,28 +127,51 @@ export async function waitForInstanceHealth(params: {
   authMap: Map<string, { authorization: string }>
   logger: Logger
 }): Promise<string | undefined> {
-  const probeResult = await Promise.race([
-    probeInstance(params.workspaceId, params.port, params.authMap, params.logger),
-    params.exitPromise.then((info) => {
-      throw buildStartupError(
-        params.workspaceId,
-        "exited during health checks",
-        info,
-        params.getLastOutput(),
-      )
-    }),
-  ])
+  let lastReason = "Health check failed"
 
-  if (probeResult.ok) {
-    return probeResult.version
+  for (let attempt = 1; attempt <= HEALTH_PROBE_MAX_ATTEMPTS; attempt++) {
+    const probeResult = await Promise.race([
+      probeInstance(params.workspaceId, params.port, params.authMap, params.logger),
+      params.exitPromise.then((info) => {
+        throw buildStartupError(
+          params.workspaceId,
+          "exited during health checks",
+          info,
+          params.getLastOutput(),
+        )
+      }),
+    ])
+
+    if (probeResult.ok) {
+      return probeResult.version
+    }
+
+    lastReason = probeResult.reason ?? lastReason
+    params.logger.debug(
+      { workspaceId: params.workspaceId, attempt, maxAttempts: HEALTH_PROBE_MAX_ATTEMPTS, reason: lastReason },
+      "Health probe attempt failed, will retry",
+    )
+
+    if (attempt < HEALTH_PROBE_MAX_ATTEMPTS) {
+      await Promise.race([
+        delay(HEALTH_PROBE_RETRY_DELAY_MS),
+        params.exitPromise.then((info) => {
+          throw buildStartupError(
+            params.workspaceId,
+            "exited during health checks",
+            info,
+            params.getLastOutput(),
+          )
+        }),
+      ])
+    }
   }
 
   const latestOutput = params.getLastOutput().trim()
-  if (latestOutput) {
-    throw new Error(latestOutput)
-  }
-  const reason = probeResult.reason ?? "Health check failed"
-  throw new Error(`Workspace ${params.workspaceId} failed health check: ${reason}.`)
+  const outputContext = latestOutput ? ` Last output: ${latestOutput}` : ""
+  throw new Error(
+    `Workspace ${params.workspaceId} failed health check after ${HEALTH_PROBE_MAX_ATTEMPTS} attempts: ${lastReason}.${outputContext}`,
+  )
 }
 
 export async function waitForWorkspaceReadiness(params: {
