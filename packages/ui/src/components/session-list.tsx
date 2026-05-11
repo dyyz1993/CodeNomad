@@ -1,8 +1,7 @@
 import { Component, For, Show, createSignal, createMemo, createEffect, JSX, onCleanup } from "solid-js"
-import type { SessionStatus } from "../types/session"
 import type { SessionThread } from "../stores/session-state"
-import { getRetrySeconds, getSessionRetry, getSessionStatus, shouldShowSessionStatus } from "../stores/session-status"
-import { Bot, User, Copy, Trash2, Pencil, ShieldAlert, ChevronDown, Search, Square, CheckSquare, MinusSquare, Split, RotateCw } from "lucide-solid"
+import { Search, Square, CheckSquare, MinusSquare } from "lucide-solid"
+import SessionRow from "./session-list/SessionRow"
 import KeyboardHint from "./keyboard-hint"
 import SessionRenameDialog from "./session-rename-dialog"
 import { keyboardRegistry } from "../lib/keyboard-registry"
@@ -39,10 +38,6 @@ interface SessionListProps {
   headerContent?: JSX.Element
   footerContent?: JSX.Element
   enableFilterBar?: boolean
-}
-
-function formatSessionStatus(status: SessionStatus): string {
-  return status
 }
 
 const SessionList: Component<SessionListProps> = (props) => {
@@ -379,235 +374,9 @@ const SessionList: Component<SessionListProps> = (props) => {
   }
  
 
-  const SessionRow: Component<{
-    sessionId: string
-    isChild?: boolean
-    isLastChild?: boolean
-    hasChildren?: boolean
-    expanded?: boolean
-    onToggleExpand?: () => void
-  }> = (rowProps) => {
-    const session = createMemo(() => sessionStateSessions().get(props.instanceId)?.get(rowProps.sessionId))
-    if (!session()) {
-      return <></>
-    }
+  const getInstanceSession = (instanceId: string, sessionId: string) =>
+    sessionStateSessions().get(instanceId)?.get(sessionId)
 
-    const worktreeSlug = createMemo(() => {
-      if (rowProps.isChild) return "root"
-      return getWorktreeSlugForParentSession(props.instanceId, rowProps.sessionId)
-    })
-
-    const showWorktreeBadge = createMemo(() => {
-      if (rowProps.isChild) return false
-      if (getGitRepoStatus(props.instanceId) === false) return false
-      const slug = worktreeSlug()
-      return Boolean(slug) && slug !== "root"
-    })
-
-    const isActive = () => props.activeSessionId === rowProps.sessionId
-    const title = () => session()?.title || t("sessionList.session.untitled")
-    const status = () => getSessionStatus(props.instanceId, rowProps.sessionId)
-    const retry = () => getSessionRetry(props.instanceId, rowProps.sessionId)
-    const statusLabel = () => {
-      const retryState = retry()
-      if (retryState) {
-        const seconds = getRetrySeconds(retryState.next, now())
-        return seconds > 0 ? t("sessionList.status.retryingIn", { seconds: String(seconds) }) : t("sessionList.status.retrying")
-      }
-      switch (formatSessionStatus(status())) {
-        case "working":
-          return t("sessionList.status.working")
-        case "compacting":
-          return t("sessionList.status.compacting")
-        default:
-          return t("sessionList.status.idle")
-      }
-    }
-    const needsPermission = () => Boolean(session()?.pendingPermission)
-    const needsQuestion = () => Boolean((session() as any)?.pendingQuestion)
-    const needsInput = () => needsPermission() || needsQuestion()
-    const statusClassName = () => (needsInput() ? "session-permission" : `session-${retry() ? "retrying" : status()}`)
-    const showStatus = () => needsInput() || shouldShowSessionStatus(props.instanceId, rowProps.sessionId)
-    const statusText = () =>
-      needsPermission()
-        ? t("sessionList.status.needsPermission")
-        : needsQuestion()
-          ? t("sessionList.status.needsInput")
-          : statusLabel()
-    const statusTooltip = () => {
-      const retryState = retry()
-      if (!retryState) return undefined
-      return t("sessionList.status.retryTooltip", {
-        message: retryState.message,
-        attempt: String(retryState.attempt),
-      })
-    }
- 
-    const isSelected = () => selectedSessionIds().has(rowProps.sessionId)
-
-    const parentGroupState = createMemo(() => {
-      if (rowProps.isChild) {
-        return { checked: isSelected(), indeterminate: false, ids: [rowProps.sessionId] }
-      }
-
-      const ids = getSelectableThreadIds(rowProps.sessionId)
-      const selected = selectedSessionIds()
-      const selectedInGroup = ids.reduce((count, id) => (selected.has(id) ? count + 1 : count), 0)
-      return {
-        checked: selectedInGroup > 0 && selectedInGroup === ids.length,
-        indeterminate: selectedInGroup > 0 && selectedInGroup < ids.length,
-        ids,
-      }
-    })
-
-    let rowCheckboxEl: HTMLInputElement | null = null
-    createEffect(() => {
-      if (!rowCheckboxEl) return
-      rowCheckboxEl.indeterminate = parentGroupState().indeterminate
-    })
-
-    return (
-      <div class="session-list-item group">
-        <button
-          class={`session-item-base ${rowProps.isChild ? `session-item-child${rowProps.isLastChild ? " session-item-child-last" : ""} session-item-border-assistant session-item-kind-assistant` : "session-item-border-user session-item-kind-user"} ${isActive() ? "session-item-active" : "session-item-inactive"}`}
-          data-session-id={rowProps.sessionId}
-          onClick={() => selectSession(rowProps.sessionId)}
-          title={title()}
-          role="button"
-          aria-selected={isActive()}
-          aria-expanded={rowProps.hasChildren ? Boolean(rowProps.expanded) : undefined}
-        >
-          <div class="session-item-row session-item-header">
-            <div class="session-item-title-row">
-              <Show when={props.enableFilterBar}>
-                <input
-                  ref={(el) => {
-                    rowCheckboxEl = el
-                  }}
-                  type="checkbox"
-                  checked={parentGroupState().checked}
-                  onClick={(event) => event.stopPropagation()}
-                  onChange={(event) => {
-                    event.stopPropagation()
-                    setSelectedMany(parentGroupState().ids, event.currentTarget.checked)
-                  }}
-                  aria-label={t("sessionList.selection.checkboxAriaLabel")}
-                />
-              </Show>
-
-              {rowProps.isChild ? <Bot class="w-4 h-4 flex-shrink-0" /> : <User class="w-4 h-4 flex-shrink-0" />}
-              <span class="session-item-title session-item-title--clamp" dir="auto">{title()}</span>
-            </div>
-          </div>
-          <div class="session-item-row session-item-meta">
-            <div class="flex items-center gap-2 min-w-0">
-              <Show
-                when={rowProps.hasChildren && !rowProps.isChild}
-                fallback={rowProps.isChild ? null : <span class="session-item-expander session-item-expander--spacer" aria-hidden="true" />}
-              >
-                <span
-                  class={`session-item-expander opacity-80 hover:opacity-100 ${isActive() ? "hover:bg-white/20" : "hover:bg-surface-hover"}`}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    rowProps.onToggleExpand?.()
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={
-                    rowProps.expanded ? t("sessionList.expand.collapseAriaLabel") : t("sessionList.expand.expandAriaLabel")
-                  }
-                  title={rowProps.expanded ? t("sessionList.expand.collapseTitle") : t("sessionList.expand.expandTitle")}
-                >
-                  <ChevronDown class={`w-3.5 h-3.5 transition-transform ${rowProps.expanded ? "" : "-rotate-90"}`} />
-                </span>
-              </Show>
-              <Show when={showStatus()}>
-                <span
-                  class={`status-indicator session-status session-status-list ${statusClassName()} notranslate`}
-                  title={statusTooltip()}
-                  translate="no"
-                >
-                  {needsInput() ? <ShieldAlert class="w-3.5 h-3.5" aria-hidden="true" /> : <span class="status-dot" />}
-                  {statusText()}
-                </span>
-              </Show>
-              <Show when={showWorktreeBadge()}>
-                <span class="status-indicator session-status-list worktree-indicator" title={`Worktree: ${worktreeSlug()}`}>
-                  <Split class="w-3.5 h-3.5" aria-hidden="true" />
-                  <span class="worktree-indicator-label">{worktreeSlug()}</span>
-                </span>
-              </Show>
-            </div>
-            <div class="session-item-actions">
-              <span
-                class={`session-item-close opacity-80 hover:opacity-100 ${isActive() ? "hover:bg-white/20" : "hover:bg-surface-hover"}`}
-                onClick={(event) => copySessionId(event, rowProps.sessionId)}
-                role="button"
-                tabIndex={0}
-                aria-label={t("sessionList.actions.copyId.ariaLabel")}
-                title={t("sessionList.actions.copyId.title")}
-              >
-                <Copy class="w-3 h-3" />
-              </span>
-              <span
-                class={`session-item-close opacity-80 hover:opacity-100 ${isActive() ? "hover:bg-white/20" : "hover:bg-surface-hover"}`}
-                onClick={(event) => handleReloadSession(event, rowProps.sessionId)}
-                role="button"
-                tabIndex={0}
-                aria-label={t("sessionList.actions.reload.ariaLabel")}
-                title={t("sessionList.actions.reload.title")}
-              >
-                <Show
-                  when={!isSessionReloading(rowProps.sessionId)}
-                  fallback={<RotateCw class="w-3 h-3 animate-spin" />}
-                >
-                  <RotateCw class="w-3 h-3" />
-                </Show>
-              </span>
-              <span
-                class={`session-item-close opacity-80 hover:opacity-100 ${isActive() ? "hover:bg-white/20" : "hover:bg-surface-hover"}`}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  openRenameDialog(rowProps.sessionId)
-                }}
-                role="button"
-                tabIndex={0}
-                aria-label={t("sessionList.actions.rename.ariaLabel")}
-                title={t("sessionList.actions.rename.title")}
-              >
-                <Pencil class="w-3 h-3" />
-              </span>
-              <span
-                class={`session-item-close opacity-80 hover:opacity-100 ${isActive() ? "hover:bg-white/20" : "hover:bg-surface-hover"}`}
-                onClick={(event) => handleDeleteSession(event, rowProps.sessionId)}
-                role="button"
-                tabIndex={0}
-                aria-label={t("sessionList.actions.delete.ariaLabel")}
-                title={t("sessionList.actions.delete.title")}
-              >
-                <Show
-                  when={!isSessionDeleting(rowProps.sessionId)}
-                  fallback={
-                    <svg class="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-                      <path
-                        class="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                  }
-                >
-                  <Trash2 class="w-3 h-3" />
-                </Show>
-              </span>
-            </div>
-          </div>
-        </button>
-      </div>
-    )
-  }
- 
   const activeParentId = createMemo(() => {
     const activeId = props.activeSessionId
     if (!activeId || activeId === "info") return null
@@ -764,17 +533,57 @@ const SessionList: Component<SessionListProps> = (props) => {
                  const expanded = () => (normalizedQuery() ? true : isSessionParentExpanded(props.instanceId, thread.parent.id))
                  return (
                    <>
-                       <SessionRow
-                         sessionId={thread.parent.id}
-                         hasChildren={thread.children.length > 0}
-                         expanded={expanded()}
-                         onToggleExpand={() => toggleSessionParentExpanded(props.instanceId, thread.parent.id)}
-                       />
+                        <SessionRow
+                          sessionId={thread.parent.id}
+                          hasChildren={thread.children.length > 0}
+                          expanded={expanded()}
+                          onToggleExpand={() => toggleSessionParentExpanded(props.instanceId, thread.parent.id)}
+                          instanceId={props.instanceId}
+                          activeSessionId={props.activeSessionId}
+                          enableFilterBar={props.enableFilterBar}
+                          t={t}
+                          now={now}
+                          selectedSessionIds={selectedSessionIds}
+                          isSessionDeleting={isSessionDeleting}
+                          isSessionReloading={isSessionReloading}
+                          selectSession={selectSession}
+                          copySessionId={copySessionId}
+                          handleDeleteSession={handleDeleteSession}
+                          handleReloadSession={handleReloadSession}
+                          openRenameDialog={openRenameDialog}
+                          setSelectedMany={setSelectedMany}
+                          getSelectableThreadIds={getSelectableThreadIds}
+                          getInstanceSession={getInstanceSession}
+                          getWorktreeSlugForParentSession={getWorktreeSlugForParentSession}
+                          getGitRepoStatus={getGitRepoStatus}
+                        />
 
                      <Show when={expanded() && thread.children.length > 0}>
                        <For each={thread.children}>
                          {(child, index) => (
-                           <SessionRow sessionId={child.id} isChild isLastChild={index() === thread.children.length - 1} />
+                            <SessionRow
+                              sessionId={child.id}
+                              isChild
+                              isLastChild={index() === thread.children.length - 1}
+                              instanceId={props.instanceId}
+                              activeSessionId={props.activeSessionId}
+                              enableFilterBar={props.enableFilterBar}
+                              t={t}
+                              now={now}
+                              selectedSessionIds={selectedSessionIds}
+                              isSessionDeleting={isSessionDeleting}
+                              isSessionReloading={isSessionReloading}
+                              selectSession={selectSession}
+                              copySessionId={copySessionId}
+                              handleDeleteSession={handleDeleteSession}
+                              handleReloadSession={handleReloadSession}
+                              openRenameDialog={openRenameDialog}
+                              setSelectedMany={setSelectedMany}
+                              getSelectableThreadIds={getSelectableThreadIds}
+                              getInstanceSession={getInstanceSession}
+                              getWorktreeSlugForParentSession={getWorktreeSlugForParentSession}
+                              getGitRepoStatus={getGitRepoStatus}
+                            />
                          )}
                        </For>
                      </Show>

@@ -5,7 +5,6 @@ import {
   createMemo,
   createSignal,
   lazy,
-  onCleanup,
   type Accessor,
   type Component,
 } from "solid-js"
@@ -34,8 +33,8 @@ import { requestData } from "../../../../lib/opencode-api"
 import { serverApi } from "../../../../lib/api-client"
 import { showConfirmDialog } from "../../../../stores/alerts"
 import { showToastNotification } from "../../../../lib/notifications"
-import { useGlobalPointerDrag } from "../useGlobalPointerDrag"
 import { useGitChanges } from "./useGitChanges"
+import { useSplitResize } from "./useSplitResize"
 import {
   RIGHT_PANEL_CHANGES_DIFF_CONTEXT_MODE_KEY,
   RIGHT_PANEL_CHANGES_DIFF_VIEW_MODE_KEY,
@@ -43,21 +42,17 @@ import {
   RIGHT_PANEL_CHANGES_LIST_OPEN_NONPHONE_KEY,
   RIGHT_PANEL_CHANGES_LIST_OPEN_PHONE_KEY,
   RIGHT_PANEL_FILES_WORD_WRAP_KEY,
-  RIGHT_PANEL_CHANGES_SPLIT_WIDTH_KEY,
   RIGHT_PANEL_FILES_LIST_OPEN_NONPHONE_KEY,
   RIGHT_PANEL_FILES_LIST_OPEN_PHONE_KEY,
-  RIGHT_PANEL_FILES_SPLIT_WIDTH_KEY,
   RIGHT_PANEL_GIT_CHANGES_LIST_OPEN_NONPHONE_KEY,
   RIGHT_PANEL_GIT_CHANGES_LIST_OPEN_PHONE_KEY,
   RIGHT_PANEL_GIT_CHANGES_STAGED_OPEN_NONPHONE_KEY,
   RIGHT_PANEL_GIT_CHANGES_STAGED_OPEN_PHONE_KEY,
-  RIGHT_PANEL_GIT_CHANGES_SPLIT_WIDTH_KEY,
   RIGHT_PANEL_GIT_CHANGES_UNSTAGED_OPEN_NONPHONE_KEY,
   RIGHT_PANEL_GIT_CHANGES_UNSTAGED_OPEN_PHONE_KEY,
   RIGHT_PANEL_TAB_STORAGE_KEY,
   readStoredBool,
   readStoredEnum,
-  readStoredPanelWidth,
   readStoredRightPanelTab,
 } from "../storage"
 
@@ -136,12 +131,6 @@ const RightPanel: Component<RightPanelProps> = (props) => {
     readStoredEnum(RIGHT_PANEL_FILES_WORD_WRAP_KEY, ["on", "off"] as const) ?? "off",
   )
 
-  const [changesSplitWidth, setChangesSplitWidth] = createSignal(320)
-  const [filesSplitWidth, setFilesSplitWidth] = createSignal(320)
-  const [gitChangesSplitWidth, setGitChangesSplitWidth] = createSignal(320)
-  const [activeSplitResize, setActiveSplitResize] = createSignal<"changes" | "git-changes" | "files" | null>(null)
-  const [splitResizeStartX, setSplitResizeStartX] = createSignal(0)
-  const [splitResizeStartWidth, setSplitResizeStartWidth] = createSignal(0)
 
   const [filesListOpen, setFilesListOpen] = createSignal(true)
   const [filesListTouched, setFilesListTouched] = createSignal(false)
@@ -263,118 +252,15 @@ const RightPanel: Component<RightPanelProps> = (props) => {
     window.localStorage.setItem(RIGHT_PANEL_FILES_WORD_WRAP_KEY, filesWordWrapMode())
   })
 
-  const clampSplitWidth = (value: number) => {
-    const min = 200
-    const maxByDrawer = Math.max(min, Math.floor(props.rightDrawerWidth() * 0.65))
-    const max = Math.min(560, maxByDrawer)
-    return Math.min(max, Math.max(min, Math.floor(value)))
-  }
-
-  const [splitWidthsInitialized, setSplitWidthsInitialized] = createSignal(false)
-
-  createEffect(() => {
-    if (splitWidthsInitialized()) return
-    if (!props.rightDrawerWidthInitialized()) return
-    setSplitWidthsInitialized(true)
-    setChangesSplitWidth(clampSplitWidth(readStoredPanelWidth(RIGHT_PANEL_CHANGES_SPLIT_WIDTH_KEY, 320)))
-    setFilesSplitWidth(clampSplitWidth(readStoredPanelWidth(RIGHT_PANEL_FILES_SPLIT_WIDTH_KEY, 320)))
-    setGitChangesSplitWidth(clampSplitWidth(readStoredPanelWidth(RIGHT_PANEL_GIT_CHANGES_SPLIT_WIDTH_KEY, 320)))
-  })
-
-  const persistSplitWidth = (mode: "changes" | "git-changes" | "files", width: number) => {
-    if (typeof window === "undefined") return
-    const key =
-      mode === "changes"
-        ? RIGHT_PANEL_CHANGES_SPLIT_WIDTH_KEY
-        : mode === "git-changes"
-          ? RIGHT_PANEL_GIT_CHANGES_SPLIT_WIDTH_KEY
-          : RIGHT_PANEL_FILES_SPLIT_WIDTH_KEY
-    window.localStorage.setItem(key, String(width))
-  }
-
-  function stopSplitResize() {
-    setActiveSplitResize(null)
-    if (typeof document === "undefined") return
-    splitPointerDrag.stop()
-  }
-
-  function splitMouseMove(event: MouseEvent) {
-    const mode = activeSplitResize()
-    if (!mode) return
-    event.preventDefault()
-    const isRtl = typeof document !== "undefined" && document.documentElement.dir === "rtl"
-    const delta = (event.clientX - splitResizeStartX()) * (isRtl ? -1 : 1)
-    const next = clampSplitWidth(splitResizeStartWidth() + delta)
-    if (mode === "changes") setChangesSplitWidth(next)
-    else if (mode === "git-changes") setGitChangesSplitWidth(next)
-    else setFilesSplitWidth(next)
-  }
-
-  function splitMouseUp() {
-    const mode = activeSplitResize()
-    if (mode) {
-      const width =
-        mode === "changes" ? changesSplitWidth() : mode === "git-changes" ? gitChangesSplitWidth() : filesSplitWidth()
-      persistSplitWidth(mode, width)
-    }
-    stopSplitResize()
-  }
-
-  function splitTouchMove(event: TouchEvent) {
-    const mode = activeSplitResize()
-    if (!mode) return
-    const touch = event.touches[0]
-    if (!touch) return
-    event.preventDefault()
-    const isRtl = typeof document !== "undefined" && document.documentElement.dir === "rtl"
-    const delta = (touch.clientX - splitResizeStartX()) * (isRtl ? -1 : 1)
-    const next = clampSplitWidth(splitResizeStartWidth() + delta)
-    if (mode === "changes") setChangesSplitWidth(next)
-    else if (mode === "git-changes") setGitChangesSplitWidth(next)
-    else setFilesSplitWidth(next)
-  }
-
-  function splitTouchEnd() {
-    const mode = activeSplitResize()
-    if (mode) {
-      const width =
-        mode === "changes" ? changesSplitWidth() : mode === "git-changes" ? gitChangesSplitWidth() : filesSplitWidth()
-      persistSplitWidth(mode, width)
-    }
-    stopSplitResize()
-  }
-
-  const splitPointerDrag = useGlobalPointerDrag({
-    onMouseMove: splitMouseMove,
-    onMouseUp: splitMouseUp,
-    onTouchMove: splitTouchMove,
-    onTouchEnd: splitTouchEnd,
-  })
-
-  const startSplitResize = (mode: "changes" | "git-changes" | "files", clientX: number) => {
-    if (typeof document === "undefined") return
-    setActiveSplitResize(mode)
-    setSplitResizeStartX(clientX)
-    setSplitResizeStartWidth(
-      mode === "changes" ? changesSplitWidth() : mode === "git-changes" ? gitChangesSplitWidth() : filesSplitWidth(),
-    )
-    splitPointerDrag.start()
-  }
-
-  const handleSplitResizeMouseDown = (mode: "changes" | "git-changes" | "files") => (event: MouseEvent) => {
-    event.preventDefault()
-    startSplitResize(mode, event.clientX)
-  }
-
-  const handleSplitResizeTouchStart = (mode: "changes" | "git-changes" | "files") => (event: TouchEvent) => {
-    const touch = event.touches[0]
-    if (!touch) return
-    event.preventDefault()
-    startSplitResize(mode, touch.clientX)
-  }
-
-  onCleanup(() => {
-    stopSplitResize()
+  const {
+    changesSplitWidth,
+    filesSplitWidth,
+    gitChangesSplitWidth,
+    handleSplitResizeMouseDown,
+    handleSplitResizeTouchStart,
+  } = useSplitResize({
+    rightDrawerWidth: props.rightDrawerWidth,
+    rightDrawerWidthInitialized: props.rightDrawerWidthInitialized,
   })
 
   const worktreeSlugForViewer = createMemo(() => {

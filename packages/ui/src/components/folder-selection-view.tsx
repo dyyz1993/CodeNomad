@@ -18,6 +18,7 @@ import { openExternalUrl } from "../lib/external-url"
 import { serverApi } from "../lib/api-client"
 import { canOpenRemoteWindows, isTauriHost } from "../lib/runtime-env"
 import { openRemoteServerWindow } from "../lib/native/remote-window"
+import { getDisplayPath, looksLikeWindowsPath, splitFolderPath } from "./folder-selection-view/path-utils"
 
 const codeNomadLogo = new URL("../images/CodeNomad-Icon.png", import.meta.url).href
 const GITHUB_URL = "https://github.com/NeuralNomadsAI/CodeNomad"
@@ -413,63 +414,7 @@ const FolderSelectionView: Component<FolderSelectionViewProps> = (props) => {
   }
 
 
-  function getDisplayPath(path: string): string {
-    if (!path) return path
 
-    // macOS: /Users/<name>/...
-    if (path.startsWith("/Users/")) {
-      return path.replace(/^\/Users\/[^/]+/, "~")
-    }
-
-    // Linux: /home/<name>/...
-    if (path.startsWith("/home/")) {
-      return path.replace(/^\/home\/[^/]+/, "~")
-    }
-
-    // Windows: C:\Users\<name>\... (and the forward-slash variant)
-    if (/^[A-Za-z]:\\Users\\/.test(path)) {
-      return path.replace(/^[A-Za-z]:\\Users\\[^\\]+/, "~")
-    }
-    if (/^[A-Za-z]:\/Users\//.test(path)) {
-      return path.replace(/^[A-Za-z]:\/Users\/[^/]+/, "~")
-    }
-
-    return path
-  }
-
-  function looksLikeWindowsPath(value: string): boolean {
-    if (!value) return false
-    // Drive letter (C:\...) or UNC (\\server\share\...)
-    return /^[A-Za-z]:[\\/]/.test(value) || /^\\\\[^\\]+\\[^\\]+/.test(value)
-  }
-
-  function splitFolderPath(rawPath: string): { baseName: string; dirName: string } {
-    if (!rawPath) return { baseName: "", dirName: "" }
-
-    const isWindows = looksLikeWindowsPath(rawPath)
-    const trimmed = rawPath.replace(/[\\/]+$/, "")
-
-    // Root edge-cases ("/", "C:\\", "\\\\server\\share\\")
-    if (!trimmed) {
-      return { baseName: rawPath, dirName: "" }
-    }
-
-    if (isWindows && /^[A-Za-z]:$/.test(trimmed)) {
-      return { baseName: `${trimmed}\\`, dirName: "" }
-    }
-
-    const lastSlash = trimmed.lastIndexOf("/")
-    const lastBackslash = isWindows ? trimmed.lastIndexOf("\\") : -1
-    const lastSep = Math.max(lastSlash, lastBackslash)
-
-    if (lastSep < 0) {
-      return { baseName: trimmed, dirName: "" }
-    }
-
-    const baseName = trimmed.slice(lastSep + 1) || trimmed
-    const dirName = trimmed.slice(0, lastSep)
-    return { baseName, dirName }
-  }
 
   return (
     <>

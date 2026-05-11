@@ -1,12 +1,7 @@
 import os from "os"
 import path from "path"
-import { execFile } from "node:child_process"
-import { promisify } from "node:util"
-import { connect } from "net"
 import { readFile, writeFile, mkdir } from "node:fs/promises"
 import { existsSync } from "node:fs"
-
-const execFileAsync = promisify(execFile)
 import { EventBus } from "../events/bus"
 import type { SettingsService } from "../settings/service"
 import type { BinaryResolver } from "../settings/binaries"
@@ -25,8 +20,9 @@ import {
   OPENCODE_SERVER_USERNAME_ENV,
   resolveOpencodeServerAuth,
 } from "./opencode-auth"
+import { resolveBinaryPath } from "./binary-resolver"
+import { waitForWorkspaceReadiness } from "./workspace-readiness"
 
-const STARTUP_STABILITY_DELAY_MS = 300
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000
 const IDLE_CHECK_INTERVAL_MS = 60 * 1000
 const MAX_ACTIVE_WORKSPACES = 3
@@ -185,7 +181,7 @@ export class WorkspaceManager {
     await this.acquireStartupSlot()
     const id = `${Date.now().toString(36)}`
     const binary = await this.options.binaryResolver.resolveDefault()
-    const resolvedBinaryPath = await this.resolveBinaryPath(binary.path)
+    const resolvedBinaryPath = await resolveBinaryPath(binary.path, this.options.logger)
     const workspacePath = path.isAbsolute(folder) ? folder : path.resolve(this.options.rootDir, folder)
     clearWorkspaceSearchCache(workspacePath)
 
@@ -212,34 +208,7 @@ export class WorkspaceManager {
 
     this.options.eventBus.publish({ type: "workspace.created", workspace: descriptor })
 
-    const serverConfig = this.options.settings.getOwnerSync("config", "server") ?? {}
-    const envVars = (serverConfig as any)?.environmentVariables
-    const userEnvironment = envVars && typeof envVars === "object" && !Array.isArray(envVars) ? (envVars as any) : {}
-    const serverBaseUrl = this.options.getServerBaseUrl()
-    const normalizedServerBaseUrl = serverBaseUrl.replace(/\/+$/, "")
-
-    const { username: opencodeUsername, password: opencodePassword } = resolveOpencodeServerAuth({
-      userEnvironment,
-      processEnv: process.env,
-    })
-    const authorization = buildOpencodeBasicAuthHeader({ username: opencodeUsername, password: opencodePassword })
-    if (!authorization) {
-      throw new Error("Failed to build OpenCode auth header")
-    }
-    this.opencodeAuth.set(id, { username: opencodeUsername, password: opencodePassword, authorization })
-
-    const environment = {
-      ...userEnvironment,
-      OPENCODE_CONFIG_DIR: this.opencodeConfigDir,
-      CODENOMAD_INSTANCE_ID: id,
-      CODENOMAD_BASE_URL: serverBaseUrl,
-      ...(this.options.nodeExtraCaCertsPath ? { NODE_EXTRA_CA_CERTS: this.options.nodeExtraCaCertsPath } : {}),
-      [OPENCODE_SERVER_BASE_URL_ENV]: `${normalizedServerBaseUrl}${proxyPath}`,
-      [OPENCODE_SERVER_USERNAME_ENV]: opencodeUsername,
-      [OPENCODE_SERVER_PASSWORD_ENV]: opencodePassword,
-    }
-
-    const logLevel = (serverConfig as any)?.logLevel
+    const { environment, logLevel } = this.buildEnvironment(id, proxyPath)
 
     try {
       const { pid, port, exitPromise, getLastOutput } = await this.runtime.launch({
@@ -251,7 +220,14 @@ export class WorkspaceManager {
         onExit: (info) => this.handleProcessExit(info.workspaceId, info),
       })
 
-      const runtimeVersion = await this.waitForWorkspaceReadiness({ workspaceId: id, port, exitPromise, getLastOutput })
+      const runtimeVersion = await waitForWorkspaceReadiness({
+        workspaceId: id,
+        port,
+        exitPromise,
+        getLastOutput,
+        authMap: this.opencodeAuth,
+        logger: this.options.logger,
+      })
       if (runtimeVersion) {
         descriptor.binaryVersion = runtimeVersion
       }
@@ -345,250 +321,40 @@ export class WorkspaceManager {
     return workspace
   }
 
-  private async resolveBinaryPath(identifier: string): Promise<string> {
-    if (!identifier) {
-      return identifier
-    }
+  private buildEnvironment(workspaceId: string, proxyPath: string): {
+    environment: Record<string, string>
+    logLevel: string | undefined
+  } {
+    const serverConfig = this.options.settings.getOwnerSync("config", "server") ?? {}
+    const envVars = (serverConfig as any)?.environmentVariables
+    const userEnvironment = envVars && typeof envVars === "object" && !Array.isArray(envVars) ? (envVars as any) : {}
+    const serverBaseUrl = this.options.getServerBaseUrl()
+    const normalizedServerBaseUrl = serverBaseUrl.replace(/\/+$/, "")
 
-    const looksLikePath = identifier.includes("/") || identifier.includes("\\") || identifier.startsWith(".")
-    if (path.isAbsolute(identifier) || looksLikePath) {
-      return identifier
-    }
-
-    const locator = process.platform === "win32" ? "where" : "which"
-
-    try {
-      let stdout: string
-      let stderr: string
-      try {
-        const result = await execFileAsync(locator, [identifier], { encoding: "utf8" })
-        stdout = result.stdout
-        stderr = result.stderr
-      } catch (err: any) {
-        stdout = err?.stdout ?? ""
-        stderr = err?.stderr ?? ""
-        if (!stdout && err?.code === "ENOENT") {
-          this.options.logger.warn({ identifier, err }, "Failed to resolve binary path via locator command")
-          return identifier
-        }
-      }
-
-      if (stdout) {
-        const candidates = stdout
-          .split(/\r?\n/)
-          .map((line) => line.trim())
-          .filter((line) => line.length > 0)
-          .filter((line) => !/^INFO:/i.test(line))
-
-        if (candidates.length > 0) {
-          const resolved = this.pickBinaryCandidate(candidates)
-          this.options.logger.debug({ identifier, resolved, candidates }, "Resolved binary path from system PATH")
-          return resolved
-        }
-      }
-
-      if (stderr) {
-        this.options.logger.warn({ identifier, stderr }, "Locator command reported errors")
-      }
-    } catch (error) {
-      this.options.logger.warn({ identifier, err: error }, "Failed to resolve binary path from system PATH")
-    }
-
-    return identifier
-  }
-
-  private pickBinaryCandidate(candidates: string[]): string {
-    if (process.platform !== "win32") {
-      return candidates[0] ?? ""
-    }
-
-    const extensionPreference = [".exe", ".cmd", ".bat", ".ps1"]
-
-    for (const ext of extensionPreference) {
-      const match = candidates.find((candidate) => candidate.toLowerCase().endsWith(ext))
-      if (match) {
-        return match
-      }
-    }
-
-    return candidates[0] ?? ""
-  }
-
-  private async waitForWorkspaceReadiness(params: {
-    workspaceId: string
-    port: number
-    exitPromise: Promise<ProcessExitInfo>
-    getLastOutput: () => string
-  }): Promise<string | undefined> {
-
-    await Promise.race([
-      this.waitForPortAvailability(params.port),
-      params.exitPromise.then((info) => {
-        throw this.buildStartupError(
-          params.workspaceId,
-          "exited before becoming ready",
-          info,
-          params.getLastOutput(),
-        )
-      }),
-    ])
-
-    const version = await this.waitForInstanceHealth(params)
-
-    await Promise.race([
-      this.delay(STARTUP_STABILITY_DELAY_MS),
-      params.exitPromise.then((info) => {
-        throw this.buildStartupError(
-          params.workspaceId,
-          "exited shortly after start",
-          info,
-          params.getLastOutput(),
-        )
-      }),
-    ])
-
-    return version
-  }
-
-  private async waitForInstanceHealth(params: {
-    workspaceId: string
-    port: number
-    exitPromise: Promise<ProcessExitInfo>
-    getLastOutput: () => string
-  }): Promise<string | undefined> {
-    const probeResult = await Promise.race([
-      this.probeInstance(params.workspaceId, params.port),
-      params.exitPromise.then((info) => {
-        throw this.buildStartupError(
-          params.workspaceId,
-          "exited during health checks",
-          info,
-          params.getLastOutput(),
-        )
-      }),
-    ])
-
-    if (probeResult.ok) {
-      return probeResult.version
-    }
-
-    const latestOutput = params.getLastOutput().trim()
-    if (latestOutput) {
-      throw new Error(latestOutput)
-    }
-    const reason = probeResult.reason ?? "Health check failed"
-    throw new Error(`Workspace ${params.workspaceId} failed health check: ${reason}.`)
-  }
-
-  private async probeInstance(
-    workspaceId: string,
-    port: number,
-  ): Promise<{ ok: boolean; reason?: string; version?: string }> {
-    const url = `http://127.0.0.1:${port}/global/health`
-
-    try {
-      const headers: Record<string, string> = {}
-      const authHeader = this.opencodeAuth.get(workspaceId)?.authorization
-      if (authHeader) {
-        headers["Authorization"] = authHeader
-      }
-
-      const response = await fetch(url, { headers })
-      if (!response.ok) {
-        const reason = `/global/health returned HTTP ${response.status}`
-        this.options.logger.debug({ workspaceId, status: response.status }, "Health probe returned server error")
-        return { ok: false, reason }
-      }
-
-      const payload = (await response.json().catch(() => null)) as null | { healthy?: unknown; version?: unknown }
-      const healthy = payload?.healthy === true
-      const version = typeof payload?.version === "string" ? payload.version.trim() : undefined
-
-      if (!healthy) {
-        const reason = "Instance reported unhealthy"
-        this.options.logger.debug({ workspaceId, payload }, "Health probe returned unhealthy response")
-        return { ok: false, reason }
-      }
-
-      return { ok: true, version: version || undefined }
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
-      this.options.logger.debug({ workspaceId, err: error }, "Health probe failed")
-      return { ok: false, reason }
-    }
-  }
-
-  private buildStartupError(
-    workspaceId: string,
-    phase: string,
-    exitInfo: ProcessExitInfo,
-    lastOutput: string,
-  ): Error {
-    const exitDetails = this.describeExit(exitInfo)
-    const trimmedOutput = lastOutput.trim()
-    const outputDetails = trimmedOutput ? ` Last output: ${trimmedOutput}` : ""
-    return new Error(`Workspace ${workspaceId} ${phase} (${exitDetails}).${outputDetails}`)
-  }
-
-  private waitForPortAvailability(port: number, timeoutMs = 5000): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const deadline = Date.now() + timeoutMs
-      let settled = false
-      let retryTimer: NodeJS.Timeout | null = null
-
-      const cleanup = () => {
-        settled = true
-        if (retryTimer) {
-          clearTimeout(retryTimer)
-          retryTimer = null
-        }
-      }
-
-      const tryConnect = () => {
-        if (settled) {
-          return
-        }
-        const socket = connect({ port, host: "127.0.0.1" }, () => {
-          cleanup()
-          socket.end()
-          resolve()
-        })
-        socket.once("error", () => {
-          socket.destroy()
-          if (settled) {
-            return
-          }
-          if (Date.now() >= deadline) {
-            cleanup()
-            reject(new Error(`Workspace port ${port} did not become ready within ${timeoutMs}ms`))
-          } else {
-            retryTimer = setTimeout(() => {
-              retryTimer = null
-              tryConnect()
-            }, 100)
-          }
-        })
-      }
-
-      tryConnect()
+    const { username: opencodeUsername, password: opencodePassword } = resolveOpencodeServerAuth({
+      userEnvironment,
+      processEnv: process.env,
     })
-  }
+    const authorization = buildOpencodeBasicAuthHeader({ username: opencodeUsername, password: opencodePassword })
+    if (!authorization) {
+      throw new Error("Failed to build OpenCode auth header")
+    }
+    this.opencodeAuth.set(workspaceId, { username: opencodeUsername, password: opencodePassword, authorization })
 
-  private delay(durationMs: number): Promise<void> {
-    if (durationMs <= 0) {
-      return Promise.resolve()
+    const environment = {
+      ...userEnvironment,
+      OPENCODE_CONFIG_DIR: this.opencodeConfigDir,
+      CODENOMAD_INSTANCE_ID: workspaceId,
+      CODENOMAD_BASE_URL: serverBaseUrl,
+      ...(this.options.nodeExtraCaCertsPath ? { NODE_EXTRA_CA_CERTS: this.options.nodeExtraCaCertsPath } : {}),
+      [OPENCODE_SERVER_BASE_URL_ENV]: `${normalizedServerBaseUrl}${proxyPath}`,
+      [OPENCODE_SERVER_USERNAME_ENV]: opencodeUsername,
+      [OPENCODE_SERVER_PASSWORD_ENV]: opencodePassword,
     }
-    return new Promise((resolve) => setTimeout(resolve, durationMs))
-  }
 
-  private describeExit(info: ProcessExitInfo): string {
-    if (info.signal) {
-      return `signal ${info.signal}`
-    }
-    if (info.code !== null) {
-      return `code ${info.code}`
-    }
-    return "unknown reason"
+    const logLevel = (serverConfig as any)?.logLevel
+
+    return { environment, logLevel }
   }
 
   private handleProcessExit(workspaceId: string, info: { code: number | null; requested: boolean }) {
@@ -737,36 +503,9 @@ export class WorkspaceManager {
       workspace.updatedAt = new Date().toISOString()
 
       const binary = await this.options.binaryResolver.resolveDefault()
-      const resolvedBinaryPath = await this.resolveBinaryPath(binary.path)
+      const resolvedBinaryPath = await resolveBinaryPath(binary.path, this.options.logger)
 
-      const serverConfig = this.options.settings.getOwnerSync("config", "server") ?? {}
-      const envVars = (serverConfig as any)?.environmentVariables
-      const userEnvironment = envVars && typeof envVars === "object" && !Array.isArray(envVars) ? (envVars as any) : {}
-      const serverBaseUrl = this.options.getServerBaseUrl()
-      const normalizedServerBaseUrl = serverBaseUrl.replace(/\/+$/, "")
-
-      const { username: opencodeUsername, password: opencodePassword } = resolveOpencodeServerAuth({
-        userEnvironment,
-        processEnv: process.env,
-      })
-      const authorization = buildOpencodeBasicAuthHeader({ username: opencodeUsername, password: opencodePassword })
-      if (!authorization) {
-        throw new Error("Failed to build OpenCode auth header")
-      }
-      this.opencodeAuth.set(id, { username: opencodeUsername, password: opencodePassword, authorization })
-
-      const environment = {
-        ...userEnvironment,
-        OPENCODE_CONFIG_DIR: this.opencodeConfigDir,
-        CODENOMAD_INSTANCE_ID: id,
-        CODENOMAD_BASE_URL: serverBaseUrl,
-        ...(this.options.nodeExtraCaCertsPath ? { NODE_EXTRA_CA_CERTS: this.options.nodeExtraCaCertsPath } : {}),
-        [OPENCODE_SERVER_BASE_URL_ENV]: `${normalizedServerBaseUrl}${workspace.proxyPath}`,
-        [OPENCODE_SERVER_USERNAME_ENV]: opencodeUsername,
-        [OPENCODE_SERVER_PASSWORD_ENV]: opencodePassword,
-      }
-
-      const logLevel = (serverConfig as any)?.logLevel
+      const { environment, logLevel } = this.buildEnvironment(id, workspace.proxyPath)
 
       const { pid, port, exitPromise, getLastOutput } = await this.runtime.launch({
         workspaceId: id,
@@ -777,7 +516,14 @@ export class WorkspaceManager {
         onExit: (info) => this.handleProcessExit(info.workspaceId, info),
       })
 
-      const runtimeVersion = await this.waitForWorkspaceReadiness({ workspaceId: id, port, exitPromise, getLastOutput })
+      const runtimeVersion = await waitForWorkspaceReadiness({
+        workspaceId: id,
+        port,
+        exitPromise,
+        getLastOutput,
+        authMap: this.opencodeAuth,
+        logger: this.options.logger,
+      })
       if (runtimeVersion) {
         workspace.binaryVersion = runtimeVersion
       }

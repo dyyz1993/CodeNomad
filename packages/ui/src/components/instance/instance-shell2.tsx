@@ -25,7 +25,6 @@ import Kbd from "../kbd"
 import InstanceWelcomeView from "../instance-welcome-view"
 import InfoView from "../info-view"
 import CommandPalette from "../command-palette"
-import PermissionNotificationBanner from "../permission-notification-banner"
 import PermissionApprovalModal from "../permission-approval-modal"
 import SessionView from "../session/session-view"
 import { formatTokenTotal } from "../../lib/formatters"
@@ -41,8 +40,8 @@ import SessionSidebar from "./shell/SessionSidebar"
 import { useSessionSidebarRequests } from "./shell/useSessionSidebarRequests"
 import RightPanel from "./shell/right-panel/RightPanel"
 import { useDrawerChrome } from "./shell/useDrawerChrome"
-import { getRetrySeconds, getSessionRetry, getSessionStatus, shouldShowSessionStatus } from "../../stores/session-status"
-import { Maximize2, Search, ShieldAlert } from "lucide-solid"
+import SessionHeaderIndicators from "./shell/SessionHeaderIndicators"
+import { Maximize2, Search } from "lucide-solid"
 import type { PromptInputApi } from "../prompt-input/types"
 
 import type { LayoutMode } from "./shell/types"
@@ -63,7 +62,6 @@ import {
   canAutoRespondPermission,
   finishAutoRespondPermission,
   getPermissionAutoAcceptInFlightVersion,
-  isPermissionAutoAcceptEnabled,
 } from "../../stores/permission-auto-accept"
 
 const log = getLogger("session")
@@ -302,102 +300,6 @@ const InstanceShell2: Component<InstanceShellProps> = (props) => {
         })
     }
   })
-
-  const yoloModeEnabled = createMemo(() => {
-    const session = activeSessionForInstance()
-    if (!session) return false
-    return isPermissionAutoAcceptEnabled(props.instance.id, session.id)
-  })
-
-  const activeSessionStatusPill = createMemo(() => {
-    const activeSessionId = activeSessionIdForInstance()
-    if (!activeSessionId || activeSessionId === "info") return null
-
-    const activeSession = activeSessionForInstance()
-    const needsPermission = Boolean(activeSession?.pendingPermission)
-    const needsQuestion = Boolean(activeSession?.pendingQuestion)
-    const needsInput = needsPermission || needsQuestion
-
-    if (needsInput) {
-      return {
-        className: "session-permission",
-        text: needsPermission
-          ? t("sessionList.status.needsPermission")
-          : t("sessionList.status.needsInput"),
-        showAlertIcon: true,
-      }
-    }
-
-    const status = getSessionStatus(props.instance.id, activeSessionId)
-    const retry = getSessionRetry(props.instance.id, activeSessionId)
-    const showStatus = shouldShowSessionStatus(props.instance.id, activeSessionId)
-    if (!showStatus) {
-      return null
-    }
-    const text = retry
-      ? (() => {
-          const seconds = getRetrySeconds(retry.next, now())
-          return seconds > 0 ? t("sessionList.status.retryingIn", { seconds: String(seconds) }) : t("sessionList.status.retrying")
-        })()
-      : status === "working"
-        ? t("sessionList.status.working")
-        : status === "compacting"
-          ? t("sessionList.status.compacting")
-          : t("sessionList.status.idle")
-
-    return {
-      className: `session-${retry ? "retrying" : status}`,
-      text,
-      showAlertIcon: false,
-      title: retry
-        ? t("sessionList.status.retryTooltip", {
-            message: retry.message,
-            attempt: String(retry.attempt),
-          })
-        : undefined,
-    }
-  })
-
-  const renderActiveSessionStatusPill = () => {
-    const pill = activeSessionStatusPill()
-    if (!pill) return null
-    return (
-      <span
-        class={`status-indicator session-status session-status-list ${pill.className} notranslate`}
-        title={pill.title}
-        translate="no"
-      >
-        {pill.showAlertIcon ? <ShieldAlert class="w-3.5 h-3.5" aria-hidden="true" /> : <span class="status-dot" />}
-        {pill.text}
-      </span>
-    )
-  }
-
-  const renderYoloModePill = () => {
-    if (!yoloModeEnabled()) return null
-    return (
-      <span
-        class="status-indicator session-status session-status-list session-yolo-mode"
-        aria-label={t("instanceShell.yoloMode.badgeAriaLabel")}
-        title={t("instanceShell.yoloMode.badgeAriaLabel")}
-      >
-        <span class="status-dot" />
-        {t("instanceShell.yoloMode.badge")}
-      </span>
-    )
-  }
-
-  const renderSessionHeaderIndicators = () => (
-    <div class="flex items-center flex-wrap justify-center gap-2">
-      {renderYoloModePill()}
-      <Show when={hasPendingRequests()} fallback={renderActiveSessionStatusPill()}>
-        <PermissionNotificationBanner
-          instanceId={props.instance.id}
-          onClick={() => setPermissionModalOpen(true)}
-        />
-      </Show>
-    </div>
-  )
 
   const handleCommandPaletteClick = () => {
     showCommandPalette(props.instance.id)
@@ -731,7 +633,14 @@ const InstanceShell2: Component<InstanceShellProps> = (props) => {
                     </Show>
 
                     <div class="flex-1 flex items-center justify-center min-w-0">
-                      {renderSessionHeaderIndicators()}
+                      <SessionHeaderIndicators
+                        instanceId={props.instance.id}
+                        activeSessionId={activeSessionIdForInstance}
+                        activeSession={activeSessionForInstance}
+                        hasPendingRequests={hasPendingRequests}
+                        now={now}
+                        onPermissionModalOpen={() => setPermissionModalOpen(true)}
+                      />
                     </div>
 
                     <div class="flex flex-wrap items-center justify-center gap-1">
@@ -834,7 +743,14 @@ const InstanceShell2: Component<InstanceShellProps> = (props) => {
                 </Show>
 
                 <div class="ml-auto flex items-center session-header-hints">
-                  {renderSessionHeaderIndicators()}
+                  <SessionHeaderIndicators
+                    instanceId={props.instance.id}
+                    activeSessionId={activeSessionIdForInstance}
+                    activeSession={activeSessionForInstance}
+                    hasPendingRequests={hasPendingRequests}
+                    now={now}
+                    onPermissionModalOpen={() => setPermissionModalOpen(true)}
+                  />
                 </div>
               </div>
 
