@@ -165,11 +165,17 @@ export function createHttpServer(deps: HttpServerDeps) {
          return
        }
 
-       // When we bind to a non-loopback host (e.g., 0.0.0.0 or LAN IP), allow cross-origin UI access.
-       if (deps.bindHost === "0.0.0.0" || !isLoopbackHost(deps.bindHost)) {
-         cb(null, true)
-         return
-       }
+        // When we bind to a non-loopback host (e.g., 0.0.0.0 or LAN IP), allow cross-origin UI access
+        // only from known self origins or dev origins to prevent CSRF.
+        if (deps.bindHost === "0.0.0.0" || !isLoopbackHost(deps.bindHost)) {
+          const selfOriginsSet = getSelfOrigins()
+          if (selfOriginsSet.has(origin) || allowedDevOrigins.has(origin)) {
+            cb(null, true)
+            return
+          }
+          cb(null, false)
+          return
+        }
 
 
       cb(null, false)
