@@ -358,6 +358,7 @@ async function main() {
     logger: logger.child({ component: "sidecars" }),
   })
   const autoContinueManager = new AutoContinueManager(logger, workspaceManager, configDir)
+  await autoContinueManager.ready()
   workspaceManager.autoContinueManager = autoContinueManager
   const crossSessionManager = new CrossSessionManager(logger, workspaceManager)
   const configDoc = settings.getOwnerSync("config", "server")
