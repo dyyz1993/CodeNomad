@@ -49,6 +49,8 @@ export function registerInstanceProxyRoutes(app: FastifyInstance, deps: Instance
   })
 }
 
+const recoveringWorkspaces = new Set<string>()
+
 const INSTANCE_PROXY_HOST = '127.0.0.1'
 const OPENCODE_DIR_OVERRIDE_PREFIX = '__dir/'
 const OPENCODE_DIR_OVERRIDE_MAX_LEN = 4096
@@ -271,12 +273,14 @@ async function proxyWorkspaceRequest(args: {
 
       if (isConnectionError) {
         logger.warn({ workspaceId, targetUrl, errorCode, errorName, err: errorMsg }, 'Instance connection error, triggering recovery')
-        if (!workspaceManager.isWorkspaceBusy(workspaceId)) {
+        if (!workspaceManager.isWorkspaceBusy(workspaceId) && !recoveringWorkspaces.has(workspaceId)) {
+          recoveringWorkspaces.add(workspaceId)
           workspaceManager
             .suspendWorkspace(workspaceId)
             .then(() => workspaceManager.resumeWorkspace(workspaceId))
             .then(() => logger.info({ workspaceId }, 'Workspace recovered after connection error'))
             .catch((e) => logger.warn({ workspaceId, err: e }, 'Failed to recover workspace'))
+            .finally(() => { recoveringWorkspaces.delete(workspaceId) })
         }
         if (!proxyReply.sent) {
           proxyReply
