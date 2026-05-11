@@ -106,16 +106,24 @@ export class YamlDocStore {
     return nextOwner
   }
 
+  private async writeAtomic(yaml: string, tmpPath: string): Promise<void> {
+    const dir = path.dirname(this.filePath)
+    await mkdir(dir, { recursive: true })
+    await writeFile(tmpPath, ensureTrailingNewline(yaml), "utf-8")
+    await rename(tmpPath, this.filePath)
+  }
+
   private async persist() {
+    const yaml = stringifyYaml(this.cache as any)
+    const tmpPath = this.filePath + ".tmp"
     try {
-      const dir = path.dirname(this.filePath)
-      await mkdir(dir, { recursive: true })
-      const yaml = stringifyYaml(this.cache as any)
-      const tmpPath = this.filePath + ".tmp"
-      await writeFile(tmpPath, ensureTrailingNewline(yaml), "utf-8")
-      await rename(tmpPath, this.filePath)
-    } catch (error) {
-      this.logger.warn({ err: error, filePath: this.filePath }, "Failed to persist YAML doc")
+      await this.writeAtomic(yaml, tmpPath)
+    } catch {
+      try {
+        await this.writeAtomic(yaml, tmpPath)
+      } catch (error) {
+        this.logger.warn({ err: error, filePath: this.filePath }, "Failed to persist YAML doc")
+      }
     }
   }
 }

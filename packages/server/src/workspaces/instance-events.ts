@@ -22,6 +22,8 @@ const IDLE_EVENTS = new Set([
 const INSTANCE_HOST = "127.0.0.1"
 const STREAM_AGENT = new UndiciAgent({ bodyTimeout: 0, headersTimeout: 0 })
 const RECONNECT_DELAY_MS = 1000
+const RECONNECT_MAX_DELAY_MS = 30_000
+const RECONNECT_BACKOFF_FACTOR = 2
 const LOG_THROTTLE_MS = 50
 const ACTIVITY_THROTTLE_MS = 1000
 const SILENCE_IDLE_THRESHOLD_MS = 8_000
@@ -43,7 +45,7 @@ export class InstanceEventBridge {
   private readonly streams = new Map<string, ActiveStream>()
   private readonly lastLogTime = new Map<string, number>()
   private readonly sessionLastBusyTime = new Map<string, number>()
-  private readonly sessionIdleTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private silenceCheckTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(private readonly options: InstanceEventBridgeOptions) {
     const bus = this.options.eventBus
@@ -60,10 +62,10 @@ export class InstanceEventBridge {
       this.publishStatus(id, "disconnected")
     }
     this.streams.clear()
-    for (const timer of this.sessionIdleTimers.values()) {
-      clearTimeout(timer)
+    if (this.silenceCheckTimer) {
+      clearInterval(this.silenceCheckTimer)
+      this.silenceCheckTimer = null
     }
-    this.sessionIdleTimers.clear()
     this.sessionLastBusyTime.clear()
   }
 
@@ -99,12 +101,6 @@ export class InstanceEventBridge {
     this.streams.delete(workspaceId)
     this.lastLogTime.delete(workspaceId)
     activityThrottleTime.delete(workspaceId)
-    for (const [key, timer] of this.sessionIdleTimers.entries()) {
-      if (key.startsWith(`${workspaceId}:`)) {
-        clearTimeout(timer)
-        this.sessionIdleTimers.delete(key)
-      }
-    }
     for (const key of this.sessionLastBusyTime.keys()) {
       if (key.startsWith(`${workspaceId}:`)) {
         this.sessionLastBusyTime.delete(key)
@@ -114,10 +110,18 @@ export class InstanceEventBridge {
   }
 
   private async runStream(workspaceId: string, signal: AbortSignal) {
+    let reconnectDelay = RECONNECT_DELAY_MS
     while (!signal.aborted) {
+      const workspace = this.options.workspaceManager.get(workspaceId)
+      if (workspace?.status === "suspended" || workspace?.status === "stopped") {
+        await this.delay(RECONNECT_MAX_DELAY_MS, signal)
+        continue
+      }
+
       const port = this.options.workspaceManager.getInstancePort(workspaceId)
       if (!port) {
-        await this.delay(RECONNECT_DELAY_MS, signal)
+        await this.delay(reconnectDelay, signal)
+        reconnectDelay = Math.min(reconnectDelay * RECONNECT_BACKOFF_FACTOR, RECONNECT_MAX_DELAY_MS)
         continue
       }
 
@@ -125,13 +129,15 @@ export class InstanceEventBridge {
 
       try {
         await this.consumeStream(workspaceId, port, signal)
+        reconnectDelay = RECONNECT_DELAY_MS
       } catch (error) {
         if (signal.aborted) {
           break
         }
         this.options.logger.warn({ workspaceId, err: error }, "Instance event stream disconnected")
         this.publishStatus(workspaceId, "error", error instanceof Error ? error.message : String(error))
-        await this.delay(RECONNECT_DELAY_MS, signal)
+        await this.delay(reconnectDelay, signal)
+        reconnectDelay = Math.min(reconnectDelay * RECONNECT_BACKOFF_FACTOR, RECONNECT_MAX_DELAY_MS)
       }
     }
   }
@@ -302,37 +308,53 @@ export class InstanceEventBridge {
       if (sessionId) {
         const timerKey = `${workspaceId}:${sessionId}`
         this.sessionLastBusyTime.set(timerKey, Date.now())
-
-        const existingTimer = this.sessionIdleTimers.get(timerKey)
-        if (existingTimer) {
-          clearTimeout(existingTimer)
-          this.sessionIdleTimers.delete(timerKey)
-        }
-
-        const timer = setTimeout(() => {
-          this.sessionIdleTimers.delete(timerKey)
-          const lastBusy = this.sessionLastBusyTime.get(timerKey)
-          if (!lastBusy) return
-
-          const now = Date.now()
-          if (now - lastBusy < SILENCE_IDLE_THRESHOLD_MS - 100) return
-
-          this.options.logger.info(
-            { workspaceId, sessionId, silenceMs: now - lastBusy },
-            "Silence-based idle detected"
-          )
-
-          this.options.workspaceManager.markIdle(workspaceId)
-
-          if (this.options.autoContinueManager) {
-            const parentSessionId = event.properties?.parentSessionID as string | undefined
-            const isMainSession = !parentSessionId
-            this.options.autoContinueManager.onSessionIdle(workspaceId, sessionId, isMainSession)
-          }
-        }, SILENCE_IDLE_THRESHOLD_MS)
-
-        this.sessionIdleTimers.set(timerKey, timer)
+        this.ensureSilenceCheck()
       }
+    }
+  }
+
+  private ensureSilenceCheck(): void {
+    if (this.silenceCheckTimer) return
+    this.silenceCheckTimer = setInterval(() => {
+      this.runSilenceCheck()
+    }, SILENCE_IDLE_THRESHOLD_MS)
+  }
+
+  private runSilenceCheck(): void {
+    const now = Date.now()
+    const keysToRemove: string[] = []
+
+    for (const [timerKey, lastBusy] of this.sessionLastBusyTime) {
+      if (now - lastBusy < SILENCE_IDLE_THRESHOLD_MS) continue
+
+      keysToRemove.push(timerKey)
+
+      const colonIdx = timerKey.indexOf(":")
+      if (colonIdx < 0) continue
+      const workspaceId = timerKey.slice(0, colonIdx)
+      const sessionId = timerKey.slice(colonIdx + 1)
+
+      this.options.logger.info(
+        { workspaceId, sessionId, silenceMs: now - lastBusy },
+        "Silence-based idle detected"
+      )
+
+      this.options.workspaceManager.markIdle(workspaceId)
+
+      if (this.options.autoContinueManager) {
+        const workspace = this.options.workspaceManager.get(workspaceId)
+        const isMainSession = !workspace
+        this.options.autoContinueManager.onSessionIdle(workspaceId, sessionId, isMainSession)
+      }
+    }
+
+    for (const key of keysToRemove) {
+      this.sessionLastBusyTime.delete(key)
+    }
+
+    if (this.sessionLastBusyTime.size === 0 && this.silenceCheckTimer) {
+      clearInterval(this.silenceCheckTimer)
+      this.silenceCheckTimer = null
     }
   }
 

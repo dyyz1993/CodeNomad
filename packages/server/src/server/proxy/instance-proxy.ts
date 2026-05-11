@@ -50,6 +50,12 @@ export function registerInstanceProxyRoutes(app: FastifyInstance, deps: Instance
 }
 
 const recoveringWorkspaces = new Map<string, Promise<void>>()
+const recoveryThrottleMs = 10_000
+const lastLoggedConnectionError = new Map<string, number>()
+const recoveryFailCount = new Map<string, number>()
+const recoveryCooldownUntil = new Map<string, number>()
+const RECOVERY_BASE_COOLDOWN_MS = 10_000
+const RECOVERY_MAX_COOLDOWN_MS = 300_000
 
 const INSTANCE_PROXY_HOST = '127.0.0.1'
 const OPENCODE_DIR_OVERRIDE_PREFIX = '__dir/'
@@ -100,6 +106,16 @@ async function proxyWorkspaceRequest(args: {
 
   if (!workspace) {
     reply.code(404).send({ error: 'Workspace not found' })
+    return
+  }
+
+  if (workspace.status === 'error') {
+    reply.code(502).send({ error: 'Workspace is in error state', details: workspace.error ?? 'Unknown error' })
+    return
+  }
+
+  if (workspace.status === 'stopped') {
+    reply.code(410).send({ error: 'Workspace has been stopped' })
     return
   }
 
@@ -245,19 +261,48 @@ async function proxyWorkspaceRequest(args: {
       if (isConnectionError) {
         const currentWorkspace = workspaceManager.get(workspaceId)
         if (currentWorkspace?.pid == null && currentWorkspace?.status !== 'starting') {
-          let recovery = recoveringWorkspaces.get(workspaceId)
-          if (!recovery) {
-            logger.warn({ workspaceId, targetUrl, errorCode, errorName, err: errorMsg }, 'Instance connection error, process appears dead, triggering recovery')
-            recovery = workspaceManager
-              .suspendWorkspace(workspaceId)
-              .then(() => workspaceManager.resumeWorkspace(workspaceId))
-              .then(() => logger.info({ workspaceId }, 'Workspace recovered after connection error'))
-              .catch((e) => logger.warn({ workspaceId, err: e }, 'Failed to recover workspace'))
-              .finally(() => { recoveringWorkspaces.delete(workspaceId) })
-            recoveringWorkspaces.set(workspaceId, recovery)
+          const now = Date.now()
+          const cooldownUntil = recoveryCooldownUntil.get(workspaceId) ?? 0
+          if (now < cooldownUntil) {
+            logger.debug({ workspaceId, retryAfterMs: cooldownUntil - now }, 'Recovery on cooldown')
+          } else {
+            let recovery = recoveringWorkspaces.get(workspaceId)
+            if (!recovery) {
+              const lastLog = lastLoggedConnectionError.get(workspaceId) ?? 0
+              if (now - lastLog > recoveryThrottleMs) {
+                lastLoggedConnectionError.set(workspaceId, now)
+                logger.warn({ workspaceId, targetUrl, errorCode, errorName, err: errorMsg }, 'Instance connection error, process appears dead, triggering recovery')
+              }
+              recovery = workspaceManager
+                .suspendWorkspace(workspaceId)
+                .then(() => workspaceManager.resumeWorkspace(workspaceId))
+                .then(() => {
+                  recoveryFailCount.delete(workspaceId)
+                  recoveryCooldownUntil.delete(workspaceId)
+                  lastLoggedConnectionError.delete(workspaceId)
+                  logger.info({ workspaceId }, 'Workspace recovered after connection error')
+                })
+                .catch((e) => {
+                  const fails = (recoveryFailCount.get(workspaceId) ?? 0) + 1
+                  recoveryFailCount.set(workspaceId, fails)
+                  const cooldown = Math.min(
+                    RECOVERY_BASE_COOLDOWN_MS * Math.pow(2, fails - 1),
+                    RECOVERY_MAX_COOLDOWN_MS,
+                  )
+                  recoveryCooldownUntil.set(workspaceId, Date.now() + cooldown)
+                  const now2 = Date.now()
+                  const lastLog2 = lastLoggedConnectionError.get(workspaceId) ?? 0
+                  if (now2 - lastLog2 > recoveryThrottleMs) {
+                    lastLoggedConnectionError.set(workspaceId, now2)
+                    logger.warn({ workspaceId, err: e, fails, cooldownMs: cooldown }, 'Failed to recover workspace')
+                  }
+                })
+                .finally(() => { recoveringWorkspaces.delete(workspaceId) })
+              recoveringWorkspaces.set(workspaceId, recovery)
+            }
           }
         } else {
-          logger.warn({ workspaceId, targetUrl, errorCode, errorName, err: errorMsg }, 'Instance connection error, process still alive - returning 503')
+          logger.debug({ workspaceId, targetUrl, errorCode, errorName, err: errorMsg }, 'Instance connection error, process still alive - returning 503')
         }
         if (!proxyReply.sent) {
           proxyReply
