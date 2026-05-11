@@ -1,6 +1,6 @@
 import os from "os"
 import path from "path"
-import { readFile, writeFile, mkdir } from "node:fs/promises"
+import { readFile, writeFile, mkdir, rename } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { EventBus } from "../events/bus"
 import type { SettingsService } from "../settings/service"
@@ -96,7 +96,9 @@ export class WorkspaceManager {
     }))
     try {
       await mkdir(path.dirname(this.stateFilePath), { recursive: true })
-      await writeFile(this.stateFilePath, JSON.stringify(data, null, 2), "utf-8")
+      const tmpPath = this.stateFilePath + ".tmp"
+      await writeFile(tmpPath, JSON.stringify(data, null, 2), "utf-8")
+      await rename(tmpPath, this.stateFilePath)
     } catch (err) {
       this.options.logger.warn({ err }, "Failed to save workspaces state")
     }
