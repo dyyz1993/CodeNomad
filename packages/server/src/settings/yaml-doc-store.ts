@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises"
+import { access, mkdir, readFile, stat, writeFile, rename } from "node:fs/promises"
 import { constants } from "node:fs"
 import path from "path"
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml"
@@ -108,9 +108,12 @@ export class YamlDocStore {
 
   private async persist() {
     try {
-      await mkdir(path.dirname(this.filePath), { recursive: true })
+      const dir = path.dirname(this.filePath)
+      await mkdir(dir, { recursive: true })
       const yaml = stringifyYaml(this.cache as any)
-      await writeFile(this.filePath, ensureTrailingNewline(yaml), "utf-8")
+      const tmpPath = this.filePath + ".tmp"
+      await writeFile(tmpPath, ensureTrailingNewline(yaml), "utf-8")
+      await rename(tmpPath, this.filePath)
     } catch (error) {
       this.logger.warn({ err: error, filePath: this.filePath }, "Failed to persist YAML doc")
     }
