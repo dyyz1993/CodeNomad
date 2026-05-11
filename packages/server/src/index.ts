@@ -357,7 +357,7 @@ async function main() {
     eventBus,
     logger: logger.child({ component: "sidecars" }),
   })
-  const autoContinueManager = new AutoContinueManager(logger, workspaceManager)
+  const autoContinueManager = new AutoContinueManager(logger, workspaceManager, configDir)
   workspaceManager.autoContinueManager = autoContinueManager
   const crossSessionManager = new CrossSessionManager(logger, workspaceManager)
   const configDoc = settings.getOwnerSync("config", "server")
@@ -642,7 +642,11 @@ async function main() {
     devReleaseMonitor?.stop()
 
     logger.info("Exiting process")
-    process.exit(0)
+    const forceExitTimer = setTimeout(() => {
+      logger.warn("Forced exit after 10s timeout")
+      process.exit(0)
+    }, 10000)
+    forceExitTimer.unref()
   }
 
   process.on("SIGINT", shutdown)
