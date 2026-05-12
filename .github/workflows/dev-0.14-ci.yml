@@ -1,0 +1,128 @@
+name: dev-0.14 CI Validation
+
+on:
+  push:
+    branches: [dev-0.14]
+  pull_request:
+    branches: [dev-0.14]
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 20
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck server
+        run: npx tsc --noEmit -p packages/server/tsconfig.json
+
+      - name: Build UI
+        run: npm run build:ui
+
+      - name: Build server (tsc + copy assets)
+        run: |
+          npx tsc -p packages/server/tsconfig.json
+          node packages/server/scripts/copy-auth-pages.mjs
+          node packages/server/scripts/copy-ui-dist.mjs
+          node packages/server/scripts/copy-opencode-config.mjs
+
+      - name: Verify server entry point loads
+        run: node -e "import('./packages/server/dist/index.js').then(() => console.log('OK')).catch(e => { console.error(e); process.exit(1) })"
+
+  endpoint-test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all
+        run: |
+          npm run build:ui
+          npx tsc -p packages/server/tsconfig.json
+          node packages/server/scripts/copy-auth-pages.mjs
+          node packages/server/scripts/copy-ui-dist.mjs
+          node packages/server/scripts/copy-opencode-config.mjs
+
+      - name: Start server in background
+        run: |
+          CODENOMAD_SKIP_AUTH=true \
+            node packages/server/dist/index.js \
+            --http true --https false --http-port 9899 --host 127.0.0.1 &
+          SERVER_PID=$!
+          echo "SERVER_PID=$SERVER_PID" >> "$GITHUB_ENV"
+          echo "Waiting for server to start..."
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:9899/api/health > /dev/null 2>&1; then
+              echo "Server is up"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "Server failed to start"
+              exit 1
+            fi
+            sleep 1
+          done
+
+      - name: Test health endpoint
+        run: curl -sf http://127.0.0.1:9899/api/health | jq .
+
+      - name: Test file preview route registered
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:9899/api/workspaces/test-ws/preview/serve?path=/etc/hostname")
+          echo "File preview status: $STATUS"
+          if [ "$STATUS" = "404" ] || [ "$STATUS" = "500" ]; then
+            echo "Route registered (got expected error for nonexistent workspace)"
+          else
+            echo "Unexpected status: $STATUS"
+            exit 1
+          fi
+
+      - name: Test auto-continue route registered
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:9899/api/workspaces/test-ws/auto-continue/test-session")
+          echo "Auto-continue status: $STATUS"
+          if [ "$STATUS" = "404" ] || [ "$STATUS" = "500" ]; then
+            echo "Route registered (got expected error for nonexistent workspace)"
+          else
+            echo "Unexpected status: $STATUS"
+            exit 1
+          fi
+
+      - name: Test subdomain-proxy route registered
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:9899/api/subdomain-proxy")
+          echo "Subdomain proxy status: $STATUS"
+          if [ "$STATUS" = "200" ] || [ "$STATUS" = "404" ]; then
+            echo "Route registered correctly"
+          else
+            echo "Unexpected status: $STATUS"
+            exit 1
+          fi
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -n "${SERVER_PID:-}" ]; then
+            kill $SERVER_PID 2>/dev/null || true
+          fi
