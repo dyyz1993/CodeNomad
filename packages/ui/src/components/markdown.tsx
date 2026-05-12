@@ -26,16 +26,65 @@ function buildPreviewUrl(instanceId: string, filePath: string): string {
   return `${base}/workspaces/${encodeURIComponent(instanceId)}/preview/${encoded}`
 }
 
+function isLocalPath(href: string): boolean {
+  if (href.startsWith("http://") || href.startsWith("https://") || href.startsWith("mailto:") || href.startsWith("#") || href.startsWith("data:") || href.startsWith("/workspaces/")) {
+    return false
+  }
+  return true
+}
+
+function getFileIconSvg(ext: string): string {
+  const iconMap: Record<string, string> = {
+    ts: `<svg viewBox="0 0 24 24" fill="none" stroke="#3178C6" stroke-width="1.5"><path d="M3 3h18v18H3z"/><text x="12" y="16" text-anchor="middle" fill="#3178C6" font-size="10" font-weight="bold">TS</text></svg>`,
+    tsx: `<svg viewBox="0 0 24 24" fill="none" stroke="#3178C6" stroke-width="1.5"><path d="M3 3h18v18H3z"/><text x="12" y="16" text-anchor="middle" fill="#3178C6" font-size="8" font-weight="bold">TSX</text></svg>`,
+    js: `<svg viewBox="0 0 24 24" fill="none" stroke="#F7DF1E" stroke-width="1.5"><path d="M3 3h18v18H3z"/><text x="12" y="16" text-anchor="middle" fill="#F7DF1E" font-size="10" font-weight="bold">JS</text></svg>`,
+    jsx: `<svg viewBox="0 0 24 24" fill="none" stroke="#F7DF1E" stroke-width="1.5"><path d="M3 3h18v18H3z"/><text x="12" y="16" text-anchor="middle" fill="#F7DF1E" font-size="8" font-weight="bold">JSX</text></svg>`,
+    py: `<svg viewBox="0 0 24 24" fill="none" stroke="#3776AB" stroke-width="1.5"><path d="M3 3h18v18H3z"/><text x="12" y="16" text-anchor="middle" fill="#3776AB" font-size="10" font-weight="bold">Py</text></svg>`,
+    go: `<svg viewBox="0 0 24 24" fill="none" stroke="#00ADD8" stroke-width="1.5"><path d="M3 3h18v18H3z"/><text x="12" y="16" text-anchor="middle" fill="#00ADD8" font-size="10" font-weight="bold">Go</text></svg>`,
+    rs: `<svg viewBox="0 0 24 24" fill="none" stroke="#DEA584" stroke-width="1.5"><path d="M3 3h18v18H3z"/><text x="12" y="16" text-anchor="middle" fill="#DEA584" font-size="10" font-weight="bold">Rs</text></svg>`,
+    json: `<svg viewBox="0 0 24 24" fill="none" stroke="#8BC34A" stroke-width="1.5"><path d="M3 3h18v18H3z"/><text x="12" y="16" text-anchor="middle" fill="#8BC34A" font-size="8" font-weight="bold">{ }</text></svg>`,
+    yaml: `<svg viewBox="0 0 24 24" fill="none" stroke="#6B5B95" stroke-width="1.5"><path d="M3 3h18v18H3z"/><text x="12" y="16" text-anchor="middle" fill="#6B5B95" font-size="8" font-weight="bold">YML</text></svg>`,
+    md: `<svg viewBox="0 0 24 24" fill="none" stroke="#42A5F5" stroke-width="1.5"><path d="M3 3h18v18H3z"/><text x="12" y="16" text-anchor="middle" fill="#42A5F5" font-size="10" font-weight="bold">MD</text></svg>`,
+    css: `<svg viewBox="0 0 24 24" fill="none" stroke="#1572B6" stroke-width="1.5"><path d="M3 3h18v18H3z"/><text x="12" y="16" text-anchor="middle" fill="#1572B6" font-size="10" font-weight="bold">CSS</text></svg>`,
+    html: `<svg viewBox="0 0 24 24" fill="none" stroke="#E44D26" stroke-width="1.5"><path d="M3 3h18v18H3z"/><text x="12" y="16" text-anchor="middle" fill="#E44D26" font-size="8" font-weight="bold">HTML</text></svg>`,
+    sh: `<svg viewBox="0 0 24 24" fill="none" stroke="#4EAA25" stroke-width="1.5"><path d="M3 3h18v18H3z"/><text x="12" y="16" text-anchor="middle" fill="#4EAA25" font-size="10" font-weight="bold">sh</text></svg>`,
+  }
+  return iconMap[ext] ?? `<svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #888)" stroke-width="1.5"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 10h6M9 14h4" stroke-width="1.5"/></svg>`
+}
+
+function escapeAttr(str: string): string {
+  return str.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+
 function rewriteLocalPaths(html: string, instanceId: string | undefined): string {
   if (!instanceId || !html) return html
 
-  return html.replace(/(<img\s[^>]*src=["'])([^"']*)(["'][^>]*>)/gi, (match, prefix, src, suffix) => {
+  let result = html.replace(/(<img\s[^>]*src=["'])([^"']*)(["'][^>]*>)/gi, (match, prefix, src, suffix) => {
     if (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("data:") || src.startsWith("/workspaces/")) {
       return match
     }
     const previewUrl = buildPreviewUrl(instanceId, src)
     return `${prefix}${previewUrl}${suffix}`
   })
+
+  result = result.replace(/<a\s([^>]*)href="([^"]+)"([^>]*)>([\s\S]*?)<\/a>/gi, (match, before, href, after, text) => {
+    if (!isLocalPath(href)) return match
+
+    const fileName = href.split("/").pop() || text.replace(/<[^>]*>/g, "").trim() || "file"
+    const ext = fileName.split(".").pop()?.toLowerCase() || ""
+    const previewUrl = buildPreviewUrl(instanceId, href)
+    const iconSvg = getFileIconSvg(ext)
+
+    return `<a href="${escapeAttr(previewUrl)}" target="_blank" rel="noopener noreferrer" class="path-card">
+      <span class="path-card-icon">${iconSvg}</span>
+      <span class="path-card-body">
+        <span class="path-card-name">${escapeAttr(fileName)}</span>
+        <span class="path-card-path">${escapeAttr(href)}</span>
+      </span>
+    </a>`
+  })
+
+  return result
 }
 
 type MarkdownModule = typeof import("../lib/markdown")

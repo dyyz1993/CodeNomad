@@ -104,6 +104,7 @@ export const sessionMessages = {
   "filePreview.openInNewTab": "Open in new tab",
   "filePreview.close": "Close",
   "filePreview.proxyList": "Registered proxy mappings",
+  "filePreview.load": "Load",
 
   "autoContinue.label": "Auto-Continue",
   "autoContinue.enabled": "Enabled",

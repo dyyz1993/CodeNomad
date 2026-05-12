@@ -50,6 +50,8 @@ const FilePreview: Component<FilePreviewProps> = (props) => {
   const [loading, setLoading] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
   const [proxyMappings, setProxyMappings] = createSignal<Array<{ subdomain: string; targetPort: number; fullUrl: string; name: string }>>([])
+  const [draftPath, setDraftPath] = createSignal(props.workspacePath + "/")
+  const [draftUrl, setDraftUrl] = createSignal("http://")
 
   const loadProxyMappings = async () => {
     try {
@@ -138,19 +140,19 @@ const FilePreview: Component<FilePreviewProps> = (props) => {
     return resolvePreviewUrl(props.instanceId, fp)
   }
 
-  const handleOpen = async (mode: "file" | "url") => {
+  const handleOpen = (mode: "file" | "url") => {
+    setTab(mode)
+    setError(null)
     if (mode === "url") {
+      setUrl("")
       void loadProxyMappings()
-      const inputUrl = window.prompt(t("filePreview.enterUrl"), "http://")
-      if (inputUrl && inputUrl.trim()) {
-        openUrl(inputUrl.trim())
-      }
     } else {
-      const inputPath = window.prompt(t("filePreview.enterPath"), props.workspacePath + "/")
-      if (inputPath && inputPath.trim()) {
-        await openFile(inputPath.trim())
-      }
+      setFilePath("")
+      setContent(null)
+      setIsImage(false)
+      setIsMarkdown(false)
     }
+    setOpen(true)
   }
 
   return (
@@ -174,7 +176,7 @@ const FilePreview: Component<FilePreviewProps> = (props) => {
         <Globe class="w-3.5 h-3.5" />
       </button>
 
-      <Dialog open={open()} onOpenChange={setOpen}>
+        <Dialog open={open()} onOpenChange={(v) => setOpen(!!v)} onClose={() => setOpen(false)}>
         <Dialog.Portal>
           <Dialog.Overlay class="modal-overlay" />
           <Dialog.Content class={`modal-surface file-preview-dialog ${fullscreen() ? "file-preview-fullscreen" : ""}`}>
@@ -182,11 +184,11 @@ const FilePreview: Component<FilePreviewProps> = (props) => {
               <Dialog.Title class="file-preview-title">
                 <Show when={tab() === "file"}>
                   <FileText class="w-4 h-4" />
-                  <span class="file-preview-filename">{filePath().split("/").pop() || filePath()}</span>
+                  <span class="file-preview-filename">{filePath() ? filePath().split("/").pop() || filePath() : t("filePreview.label")}</span>
                 </Show>
                 <Show when={tab() === "url"}>
                   <Globe class="w-4 h-4" />
-                  <span class="file-preview-filename">{url()}</span>
+                  <span class="file-preview-filename">{url() || t("filePreview.urlLabel")}</span>
                 </Show>
               </Dialog.Title>
               <div class="file-preview-header-actions">
@@ -235,6 +237,24 @@ const FilePreview: Component<FilePreviewProps> = (props) => {
 
             <div class="file-preview-body">
               <Show when={tab() === "file"}>
+                <Show when={!filePath() && !loading()}>
+                  <div class="file-preview-input-group">
+                    <input
+                      type="text"
+                      value={draftPath()}
+                      onInput={(e) => setDraftPath(e.currentTarget.value)}
+                      placeholder={t("filePreview.enterPath")}
+                      class="file-preview-input"
+                    />
+                    <button
+                      type="button"
+                      class="file-preview-input-btn"
+                      onClick={() => openFile(draftPath())}
+                    >
+                      {t("filePreview.load")}
+                    </button>
+                  </div>
+                </Show>
                 <Show when={loading()}>
                   <div class="file-preview-loading">{t("filePreview.loading")}</div>
                 </Show>
@@ -256,6 +276,24 @@ const FilePreview: Component<FilePreviewProps> = (props) => {
               </Show>
 
               <Show when={tab() === "url"}>
+                <Show when={!url()}>
+                  <div class="file-preview-input-group">
+                    <input
+                      type="text"
+                      value={draftUrl()}
+                      onInput={(e) => setDraftUrl(e.currentTarget.value)}
+                      placeholder={t("filePreview.enterUrl")}
+                      class="file-preview-input"
+                    />
+                    <button
+                      type="button"
+                      class="file-preview-input-btn"
+                      onClick={() => openUrl(draftUrl())}
+                    >
+                      {t("filePreview.load")}
+                    </button>
+                  </div>
+                </Show>
                 <Show when={proxyMappings().length > 0}>
                   <div class="file-preview-proxy-list">
                     <div class="file-preview-proxy-title">{t("filePreview.proxyList")}</div>

@@ -104,6 +104,7 @@ export const sessionMessages = {
   "filePreview.openInNewTab": "在新标签页中打开",
   "filePreview.close": "关闭",
   "filePreview.proxyList": "已注册的子域名映射",
+  "filePreview.load": "加载",
 
   "autoContinue.label": "自动续跑",
   "autoContinue.enabled": "启用",

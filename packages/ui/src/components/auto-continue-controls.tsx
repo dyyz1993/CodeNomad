@@ -33,6 +33,7 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
     triggerCount: 0,
   })
   const [dialogOpen, setDialogOpen] = createSignal(false)
+  const closeDialog = () => { setDialogOpen(false) }
   const [draftEnabled, setDraftEnabled] = createSignal(false)
   const [draftPrompt, setDraftPrompt] = createSignal("")
   const [draftMaxTriggers, setDraftMaxTriggers] = createSignal(20)
@@ -99,7 +100,7 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
           </Show>
         </button>
 
-        <Dialog open={dialogOpen()} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen()} onOpenChange={(v) => setDialogOpen(!!v)} onClose={closeDialog}>
           <Dialog.Portal>
             <Dialog.Overlay class="modal-overlay" />
             <Dialog.Content class="modal-surface auto-continue-dialog">
