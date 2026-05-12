@@ -75,16 +75,56 @@ function rewriteLocalPaths(html: string, instanceId: string | undefined): string
     const previewUrl = buildPreviewUrl(instanceId, href)
     const iconSvg = getFileIconSvg(ext)
 
-    return `<a href="${escapeAttr(previewUrl)}" target="_blank" rel="noopener noreferrer" class="path-card">
-      <span class="path-card-icon">${iconSvg}</span>
-      <span class="path-card-body">
-        <span class="path-card-name">${escapeAttr(fileName)}</span>
-        <span class="path-card-path">${escapeAttr(href)}</span>
+    return `<a href="${escapeAttr(previewUrl)}" target="_blank" rel="noopener noreferrer" class="path-card" data-file-type="${escapeAttr(ext)}" data-preview-url="${escapeAttr(previewUrl)}" data-file-path="${escapeAttr(href)}">
+      <span class="path-card-main">
+        <span class="path-card-icon">${iconSvg}</span>
+        <span class="path-card-body">
+          <span class="path-card-name">${escapeAttr(fileName)}</span>
+          <span class="path-card-path">${escapeAttr(href)}</span>
+        </span>
       </span>
+      <span class="path-card-snapshot"></span>
     </a>`
   })
 
   return result
+}
+
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "ico", "bmp"])
+
+async function loadPathCardPreviews(container: HTMLElement, instanceId: string): Promise<void> {
+  const cards = container.querySelectorAll<HTMLAnchorElement>(".path-card[data-preview-url]")
+  if (cards.length === 0) return
+
+  for (const card of cards) {
+    const fileType = card.getAttribute("data-file-type") || ""
+    const previewUrl = card.getAttribute("data-preview-url")
+    const snapshotEl = card.querySelector<HTMLElement>(".path-card-snapshot")
+    if (!previewUrl || !snapshotEl) continue
+
+    try {
+      if (IMAGE_EXTS.has(fileType)) {
+        const img = document.createElement("img")
+        img.className = "path-card-thumbnail"
+        img.src = previewUrl
+        img.alt = card.getAttribute("data-file-path") || ""
+        img.loading = "lazy"
+        snapshotEl.appendChild(img)
+      } else {
+        const response = await fetch(previewUrl)
+        if (!response.ok) continue
+        const text = await response.text()
+        const lines = text.split("\n").slice(0, 4).join("\n").trim()
+        if (!lines) continue
+        const code = document.createElement("pre")
+        code.className = "path-card-snippet"
+        code.textContent = lines
+        snapshotEl.appendChild(code)
+      }
+    } catch {
+      // silently ignore — card still shows metadata
+    }
+  }
 }
 
 type MarkdownModule = typeof import("../lib/markdown")
@@ -276,27 +316,26 @@ export function Markdown(props: MarkdownProps) {
       const target = event.target as HTMLElement
       const copyButton = target.closest(".code-block-copy") as HTMLButtonElement
 
-      if (!copyButton) {
+      if (copyButton) {
+        event.preventDefault()
+        const code = copyButton.getAttribute("data-code")
+        if (!code) {
+          return
+        }
+
+        const decodedCode = decodeURIComponent(code)
+        const success = await copyToClipboard(decodedCode)
+        const copyText = copyButton.querySelector(".copy-text")
+        if (!copyText) {
+          return
+        }
+
+        copyText.textContent = success ? t("markdown.codeBlock.copy.copied") : t("markdown.codeBlock.copy.failed")
+        setTimeout(() => {
+          copyText.textContent = t("markdown.codeBlock.copy.label")
+        }, 2000)
         return
       }
-
-      event.preventDefault()
-      const code = copyButton.getAttribute("data-code")
-      if (!code) {
-        return
-      }
-
-      const decodedCode = decodeURIComponent(code)
-      const success = await copyToClipboard(decodedCode)
-      const copyText = copyButton.querySelector(".copy-text")
-      if (!copyText) {
-        return
-      }
-
-      copyText.textContent = success ? t("markdown.codeBlock.copy.copied") : t("markdown.codeBlock.copy.failed")
-      setTimeout(() => {
-        copyText.textContent = t("markdown.codeBlock.copy.label")
-      }, 2000)
     }
 
     containerRef?.addEventListener("click", handleClick)
@@ -330,6 +369,16 @@ export function Markdown(props: MarkdownProps) {
       cleanupLanguageListener?.()
       cleanupLanguageListener = undefined
     })
+  })
+
+  // Lazy-load path card content snapshots (thumbnails, code snippets)
+  createEffect(() => {
+    const currentHtml = html()
+    if (containerRef && props.instanceId && currentHtml) {
+      setTimeout(() => {
+        void loadPathCardPreviews(containerRef!, props.instanceId!)
+      }, 100)
+    }
   })
 
   return (
