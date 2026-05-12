@@ -259,6 +259,11 @@ export function Markdown(props: MarkdownProps) {
       cacheHandle.set(cacheEntry)
     }
     notifyRendered()
+    if (containerRef && props.instanceId) {
+      requestAnimationFrame(() => {
+        void loadPathCardPreviews(containerRef!, props.instanceId!)
+      })
+    }
   }
 
   const renderSnapshot = async (snapshot: ReturnType<typeof resolved>) => {
@@ -290,6 +295,9 @@ export function Markdown(props: MarkdownProps) {
     if (localCache && cacheMatches(localCache)) {
       setHtml(rewriteLocalPaths(localCache.html, props.instanceId))
       notifyRendered()
+      if (containerRef && props.instanceId) {
+        requestAnimationFrame(() => void loadPathCardPreviews(containerRef!, props.instanceId!))
+      }
       return
     }
 
@@ -297,6 +305,9 @@ export function Markdown(props: MarkdownProps) {
     if (globalCache && cacheMatches(globalCache)) {
       setHtml(rewriteLocalPaths(globalCache.html, props.instanceId))
       notifyRendered()
+      if (containerRef && props.instanceId) {
+        requestAnimationFrame(() => void loadPathCardPreviews(containerRef!, props.instanceId!))
+      }
       return
     }
 
@@ -369,16 +380,6 @@ export function Markdown(props: MarkdownProps) {
       cleanupLanguageListener?.()
       cleanupLanguageListener = undefined
     })
-  })
-
-  // Lazy-load path card content snapshots (thumbnails, code snippets)
-  createEffect(() => {
-    const currentHtml = html()
-    if (containerRef && props.instanceId && currentHtml) {
-      setTimeout(() => {
-        void loadPathCardPreviews(containerRef!, props.instanceId!)
-      }, 100)
-    }
   })
 
   return (
