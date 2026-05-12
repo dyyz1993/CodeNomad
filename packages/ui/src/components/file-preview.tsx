@@ -6,7 +6,7 @@ import { useI18n } from "../lib/i18n"
 import { CODENOMAD_API_BASE, serverApi } from "../lib/api-client"
 import { getLogger } from "../lib/logger"
 
-const log = getLogger("file-preview")
+const log = getLogger("session")
 
 interface FilePreviewProps {
   instanceId: string
