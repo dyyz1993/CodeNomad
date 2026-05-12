@@ -1,0 +1,19 @@
+.message-item-auto-continue {
+  border-left: 2px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  background: transparent;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+
+.message-item-auto-continue .message-speaker-label[data-role="auto-continue"] {
+  font-size: 0.6875rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.35));
+  font-weight: 400;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.message-item-auto-continue .message-speaker-label[data-role="auto-continue"] svg {
+  opacity: 0.5;
+}

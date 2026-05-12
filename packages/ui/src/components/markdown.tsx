@@ -4,8 +4,39 @@ import type { TextPart, RenderCache } from "../types/message"
 import { getLogger } from "../lib/logger"
 import { copyToClipboard } from "../lib/clipboard"
 import { useI18n } from "../lib/i18n"
+import { CODENOMAD_API_BASE } from "../lib/api-client"
 
 const log = getLogger("session")
+
+function normalizeFilePath(p: string): string {
+  const parts = p.replace(/\\/g, "/").split("/")
+  const result: string[] = []
+  for (const part of parts) {
+    if (part === "." || part === "") continue
+    if (part === "..") { result.pop(); continue }
+    result.push(part)
+  }
+  return result.join("/")
+}
+
+function buildPreviewUrl(instanceId: string, filePath: string): string {
+  const base = CODENOMAD_API_BASE ?? ""
+  const normalized = normalizeFilePath(filePath)
+  const encoded = normalized.split("/").map((s) => encodeURIComponent(s)).join("/")
+  return `${base}/workspaces/${encodeURIComponent(instanceId)}/preview/${encoded}`
+}
+
+function rewriteLocalPaths(html: string, instanceId: string | undefined): string {
+  if (!instanceId || !html) return html
+
+  return html.replace(/(<img\s[^>]*src=["'])([^"']*)(["'][^>]*>)/gi, (match, prefix, src, suffix) => {
+    if (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("data:") || src.startsWith("/workspaces/")) {
+      return match
+    }
+    const previewUrl = buildPreviewUrl(instanceId, src)
+    return `${prefix}${previewUrl}${suffix}`
+  })
+}
 
 type MarkdownModule = typeof import("../lib/markdown")
 
@@ -148,10 +179,11 @@ export function Markdown(props: MarkdownProps) {
       suppressHighlight: !snapshot.highlightEnabled,
       escapeRawHtml: snapshot.escapeRawHtml,
     })
+    const rewritten = rewriteLocalPaths(rendered, props.instanceId)
     const shouldCache = !snapshot.highlightEnabled || !markdown.hasPendingCodeHighlight(snapshot.text)
 
     if (latestRequestKey === snapshot.requestKey) {
-      commitCacheEntry(snapshot, rendered, { cache: shouldCache })
+      commitCacheEntry(snapshot, rewritten, { cache: shouldCache })
     }
   }
 
@@ -167,14 +199,14 @@ export function Markdown(props: MarkdownProps) {
 
     const localCache = snapshot.part.renderCache
     if (localCache && cacheMatches(localCache)) {
-      setHtml(localCache.html)
+      setHtml(rewriteLocalPaths(localCache.html, props.instanceId))
       notifyRendered()
       return
     }
 
     const globalCache = cacheHandle.get<RenderCache>()
     if (globalCache && cacheMatches(globalCache)) {
-      setHtml(globalCache.html)
+      setHtml(rewriteLocalPaths(globalCache.html, props.instanceId))
       notifyRendered()
       return
     }

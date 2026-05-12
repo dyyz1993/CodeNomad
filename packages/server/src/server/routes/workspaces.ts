@@ -1,9 +1,11 @@
 import { FastifyInstance, FastifyReply } from "fastify"
 import { z } from "zod"
 import { WorkspaceManager } from "../../workspaces/manager"
+import type { AutoContinueManager } from "../../workspaces/auto-continue"
 
 interface RouteDeps {
   workspaceManager: WorkspaceManager
+  autoContinueManager?: AutoContinueManager
 }
 
 const WorkspaceCreateSchema = z.object({
@@ -118,6 +120,47 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: RouteDeps) {
       return handleWorkspaceError(error, reply)
     }
   })
+
+  if (deps.autoContinueManager) {
+    const AutoContinueUpdateSchema = z.object({
+      enabled: z.boolean().optional(),
+      prompt: z.string().optional(),
+      cooldownMs: z.number().int().positive().optional(),
+      maxTriggers: z.number().int().positive().optional(),
+      confirmSeconds: z.number().int().positive().optional(),
+    })
+
+    app.get<{
+      Params: { id: string; sessionId: string }
+    }>("/api/workspaces/:id/auto-continue/:sessionId", async (request, reply) => {
+      const workspace = deps.workspaceManager.get(request.params.id)
+      if (!workspace) {
+        reply.code(404)
+        return { error: "Workspace not found" }
+      }
+
+      const config = deps.autoContinueManager!.getConfig(request.params.id, request.params.sessionId)
+      const state = deps.autoContinueManager!.getState(request.params.id, request.params.sessionId)
+      return {
+        ...config,
+        triggerCount: state?.triggerCount ?? 0,
+        lastTriggerAt: state?.lastTriggerAt ?? 0,
+      }
+    })
+
+    app.put<{
+      Params: { id: string; sessionId: string }
+    }>("/api/workspaces/:id/auto-continue/:sessionId", async (request, reply) => {
+      const workspace = deps.workspaceManager.get(request.params.id)
+      if (!workspace) {
+        reply.code(404)
+        return { error: "Workspace not found" }
+      }
+      const body = AutoContinueUpdateSchema.parse(request.body ?? {})
+      const config = deps.autoContinueManager!.setConfig(request.params.id, request.params.sessionId, body)
+      return config
+    })
+  }
 }
 
 

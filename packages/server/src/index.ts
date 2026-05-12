@@ -28,6 +28,8 @@ import { SideCarManager } from "./sidecars/manager"
 import { ClientConnectionManager } from "./clients/connection-manager"
 import { PluginChannelManager } from "./plugins/channel"
 import { VoiceModeManager } from "./plugins/voice-mode"
+import { AutoContinueManager } from "./workspaces/auto-continue"
+import { SubdomainProxyManager } from "./subdomain-proxy/manager"
 
 const require = createRequire(import.meta.url)
 
@@ -62,6 +64,7 @@ interface CliOptions {
   authCookieName: string
   generateToken: boolean
   dangerouslySkipAuth: boolean
+  subdomainBase?: string
 }
 
 const DEFAULT_HOST = "127.0.0.1"
@@ -122,6 +125,10 @@ function parseCliOptions(argv: string[]): CliOptions {
       )
         .env("CODENOMAD_SKIP_AUTH")
         .default(false),
+    )
+    .addOption(
+      new Option("--subdomain-base <domain>", "Base domain for subdomain proxy (e.g. yourdomain.com)")
+        .env("CODENOMAD_SUBDOMAIN_BASE"),
     )
 
   program.parse(argv, { from: "user" })
@@ -199,6 +206,7 @@ function parseCliOptions(argv: string[]): CliOptions {
     authCookieName: parsed.authCookieName,
     generateToken: Boolean(parsed.generateToken),
     dangerouslySkipAuth: Boolean(parsed.dangerouslySkipAuth),
+    subdomainBase: (parsed as any).subdomainBase as string | undefined,
   }
 }
 
@@ -324,10 +332,22 @@ async function main() {
     eventBus,
     logger: logger.child({ component: "sidecars" }),
   })
+  const autoContinueManager = new AutoContinueManager(logger, workspaceManager, configDir)
+  await autoContinueManager.ready()
+  workspaceManager.autoContinueManager = autoContinueManager
+
+  const subdomainProxyManager = options.subdomainBase
+    ? new SubdomainProxyManager({
+        settings,
+        baseDomain: options.subdomainBase,
+        logger: logger.child({ component: "subdomain-proxy" }),
+      })
+    : undefined
   const instanceEventBridge = new InstanceEventBridge({
     workspaceManager,
     eventBus,
     logger: logger.child({ component: "instance-events" }),
+    autoContinueManager,
   })
 
   const uiDirEnvOverride = Boolean(process.env.CLI_UI_DIR)
@@ -411,6 +431,8 @@ async function main() {
         defaultPort: options.httpPort,
         protocol: "http",
         workspaceManager,
+        autoContinueManager,
+        subdomainProxyManager,
         settings,
         fileSystemBrowser,
         eventBus,
@@ -436,6 +458,8 @@ async function main() {
         protocol: "https",
         httpsOptions: tlsResolution?.httpsOptions,
         workspaceManager,
+        autoContinueManager,
+        subdomainProxyManager,
         settings,
         fileSystemBrowser,
         eventBus,
@@ -555,6 +579,18 @@ async function main() {
         clientConnectionManager.shutdown()
       } catch (error) {
         logger.warn({ err: error }, "Client connection manager shutdown failed")
+      }
+
+      try {
+        autoContinueManager.dispose()
+      } catch (error) {
+        logger.warn({ err: error }, "Auto-continue manager dispose failed")
+      }
+
+      try {
+        subdomainProxyManager?.dispose()
+      } catch (error) {
+        logger.warn({ err: error }, "Subdomain proxy manager dispose failed")
       }
 
       try {

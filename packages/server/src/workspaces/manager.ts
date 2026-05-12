@@ -10,6 +10,7 @@ import { clearWorkspaceSearchCache } from "../filesystem/search-cache"
 import { WorkspaceDescriptor, WorkspaceFileResponse, FileSystemEntry } from "../api-types"
 import { WorkspaceRuntime, ProcessExitInfo } from "./runtime"
 import { Logger } from "../logger"
+import type { AutoContinueManager } from "./auto-continue"
 import { getOpencodeConfigDir } from "../opencode-config.js"
 import {
   buildOpencodeBasicAuthHeader,
@@ -39,6 +40,9 @@ export class WorkspaceManager {
   private readonly runtime: WorkspaceRuntime
   private readonly opencodeConfigDir: string
   private readonly opencodeAuth = new Map<string, { username: string; password: string; authorization: string }>()
+  autoContinueManager?: AutoContinueManager
+  private readonly lastActivityTime = new Map<string, number>()
+  private readonly workspaceBusy = new Map<string, boolean>()
 
   constructor(private readonly options: WorkspaceManagerOptions) {
     this.runtime = new WorkspaceRuntime(this.options.eventBus, this.options.logger)
@@ -190,6 +194,7 @@ export class WorkspaceManager {
 
     this.workspaces.delete(id)
     this.opencodeAuth.delete(id)
+    this.autoContinueManager?.removeWorkspaceSessions(id)
     clearWorkspaceSearchCache(workspace.path)
     if (!wasRunning) {
       this.options.eventBus.publish({ type: "workspace.stopped", workspaceId: id })
@@ -284,6 +289,20 @@ export class WorkspaceManager {
     }
 
     return candidates[0] ?? ""
+  }
+
+  recordActivity(workspaceId: string): void {
+    this.lastActivityTime.set(workspaceId, Date.now())
+  }
+
+  markBusy(workspaceId: string): void {
+    this.workspaceBusy.set(workspaceId, true)
+    this.recordActivity(workspaceId)
+  }
+
+  markIdle(workspaceId: string): void {
+    this.workspaceBusy.set(workspaceId, false)
+    this.recordActivity(workspaceId)
   }
 
   private async waitForWorkspaceReadiness(params: {

@@ -454,6 +454,89 @@ export const serverApi = {
     })
     return source
   },
+
+  fetchAutoContinue(
+    workspaceId: string,
+    sessionId: string,
+  ): Promise<{
+    enabled: boolean
+    prompt: string
+    cooldownMs: number
+    maxTriggers: number
+    confirmSeconds: number
+    triggerCount: number
+    lastTriggerAt: number
+  }> {
+    return request(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/auto-continue/${encodeURIComponent(sessionId)}`,
+    )
+  },
+
+  updateAutoContinue(
+    workspaceId: string,
+    sessionId: string,
+    updates: {
+      enabled?: boolean
+      prompt?: string
+      cooldownMs?: number
+      maxTriggers?: number
+      confirmSeconds?: number
+    },
+  ): Promise<{
+    enabled: boolean
+    prompt: string
+    cooldownMs: number
+    maxTriggers: number
+    confirmSeconds: number
+  }> {
+    return request(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/auto-continue/${encodeURIComponent(sessionId)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(updates),
+      },
+    )
+  },
+
+  listSubdomainProxies(): Promise<Array<{
+    id: string
+    subdomain: string
+    targetPort: number
+    targetHost: string
+    name: string
+    fullUrl: string
+    createdAt: string
+    updatedAt: string
+  }>> {
+    return request("/api/subdomain-proxies")
+  },
+
+  createSubdomainProxy(input: {
+    subdomain: string
+    targetPort: number
+    targetHost?: string
+    name?: string
+  }): Promise<{
+    id: string
+    subdomain: string
+    targetPort: number
+    targetHost: string
+    name: string
+    fullUrl: string
+  }> {
+    return request("/api/subdomain-proxies", {
+      method: "POST",
+      body: JSON.stringify(input),
+    })
+  },
+
+  deleteSubdomainProxy(subdomain: string): Promise<void> {
+    return request(`/api/subdomain-proxies/${encodeURIComponent(subdomain)}`, { method: "DELETE" })
+  },
+
+  checkSubdomainProxy(subdomain: string): Promise<{ available: boolean; targetPort?: number }> {
+    return request(`/api/subdomain-proxies/${encodeURIComponent(subdomain)}/check`)
+  },
 }
 
 function buildClientEventsUrl(identity: { clientId: string; connectionId: string }): string {

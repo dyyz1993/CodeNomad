@@ -23,6 +23,8 @@ import { registerStorageRoutes } from "./routes/storage"
 import { registerPluginRoutes } from "./routes/plugin"
 import { registerBackgroundProcessRoutes } from "./routes/background-processes"
 import { registerWorktreeRoutes } from "./routes/worktrees"
+import { registerFilePreviewRoutes } from "./routes/files"
+import { registerSubdomainProxyRoutes } from "./routes/subdomain-proxy"
 import { registerSpeechRoutes } from "./routes/speech"
 import { registerRemoteServerRoutes } from "./routes/remote-servers"
 import { registerSideCarRoutes } from "./routes/sidecars"
@@ -37,6 +39,8 @@ import { ClientConnectionManager } from "../clients/connection-manager"
 import { PluginChannelManager } from "../plugins/channel"
 import { VoiceModeManager } from "../plugins/voice-mode"
 import type { SideCarManager } from "../sidecars/manager"
+import type { AutoContinueManager } from "../workspaces/auto-continue"
+import type { SubdomainProxyManager } from "../subdomain-proxy/manager"
 
 interface HttpServerDeps {
   bindHost: string
@@ -46,6 +50,8 @@ interface HttpServerDeps {
   protocol: "http" | "https"
   httpsOptions?: { key: string | Buffer; cert: string | Buffer; ca?: string | Buffer }
   workspaceManager: WorkspaceManager
+  autoContinueManager?: AutoContinueManager
+  subdomainProxyManager?: SubdomainProxyManager
   settings: SettingsService
   fileSystemBrowser: FileSystemBrowser
   eventBus: EventBus
@@ -188,6 +194,39 @@ export function createHttpServer(deps: HttpServerDeps) {
 
   registerAuthRoutes(app, { authManager: deps.authManager })
 
+  if (deps.subdomainProxyManager) {
+    app.addHook("onRequest", async (request, reply) => {
+      const host = request.headers.host?.split(":")[0]?.toLowerCase()
+      if (!host) return
+
+      const mapping = deps.subdomainProxyManager!.getByHost(host)
+      if (!mapping) return
+
+      const rawUrl = request.raw.url ?? request.url ?? "/"
+      const queryIndex = rawUrl.indexOf("?")
+      const requestPath = queryIndex >= 0 ? rawUrl.slice(0, queryIndex) : rawUrl
+      const search = queryIndex >= 0 ? rawUrl.slice(queryIndex) : ""
+      const targetUrl = deps.subdomainProxyManager!.resolveTargetUrl(mapping, requestPath, search)
+
+      proxyLogger.debug({ host, subdomain: mapping.subdomain, targetUrl }, "Subdomain proxy match")
+
+      return reply.from(targetUrl, {
+        rewriteRequestHeaders: (_origReq, headers) => {
+          headers["host"] = `${mapping.targetHost}:${mapping.targetPort}`
+          headers["x-forwarded-host"] = host
+          headers["x-forwarded-proto"] = request.protocol ?? "http"
+          return headers
+        },
+        onError: (_proxyReply, { error }) => {
+          proxyLogger.error({ err: error, host, targetUrl }, "Subdomain proxy failed")
+          if (!reply.sent) {
+            reply.code(502).send({ error: `Subdomain proxy failed: ${mapping.subdomain}` })
+          }
+        },
+      })
+    })
+  }
+
   app.addHook("preHandler", (request, reply, done) => {
     const rawUrl = request.raw.url ?? request.url
     const pathname = (rawUrl.split("?")[0] ?? "").trim()
@@ -256,7 +295,7 @@ export function createHttpServer(deps: HttpServerDeps) {
     reply.code(404).send({ message: "UI bundle missing" })
   })
 
-  registerWorkspaceRoutes(app, { workspaceManager: deps.workspaceManager })
+  registerWorkspaceRoutes(app, { workspaceManager: deps.workspaceManager, autoContinueManager: deps.autoContinueManager })
   registerSettingsRoutes(app, { settings: deps.settings, logger: apiLogger })
   registerFilesystemRoutes(app, { fileSystemBrowser: deps.fileSystemBrowser })
   registerMetaRoutes(app, { serverMeta: deps.serverMeta })
@@ -267,6 +306,10 @@ export function createHttpServer(deps: HttpServerDeps) {
     connectionManager: deps.clientConnectionManager,
   })
   registerWorktreeRoutes(app, { workspaceManager: deps.workspaceManager })
+  registerFilePreviewRoutes(app, { workspaceManager: deps.workspaceManager })
+  if (deps.subdomainProxyManager) {
+    registerSubdomainProxyRoutes(app, { subdomainProxyManager: deps.subdomainProxyManager })
+  }
   registerStorageRoutes(app, {
     instanceStore: deps.instanceStore,
     eventBus: deps.eventBus,

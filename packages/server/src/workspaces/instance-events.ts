@@ -4,15 +4,34 @@ import { EventBus } from "../events/bus"
 import { Logger } from "../logger"
 import { WorkspaceManager } from "./manager"
 import { InstanceStreamEvent, InstanceStreamStatus } from "../api-types"
+import type { AutoContinueManager } from "./auto-continue"
+
+const BUSY_EVENTS = new Set([
+  "message.updated",
+  "message.part.updated",
+  "message.part.delta",
+  "session.compacted",
+  "permission.asked",
+  "question.asked",
+])
+
+const IDLE_EVENTS = new Set([
+  "session.idle",
+])
 
 const INSTANCE_HOST = "127.0.0.1"
 const STREAM_AGENT = new UndiciAgent({ bodyTimeout: 0, headersTimeout: 0 })
 const RECONNECT_DELAY_MS = 1000
+const LOG_THROTTLE_MS = 50
+const ACTIVITY_THROTTLE_MS = 1000
+const SILENCE_IDLE_THRESHOLD_MS = 8_000
+const activityThrottleTime = new Map<string, number>()
 
 interface InstanceEventBridgeOptions {
   workspaceManager: WorkspaceManager
   eventBus: EventBus
   logger: Logger
+  autoContinueManager?: AutoContinueManager
 }
 
 interface ActiveStream {
@@ -22,6 +41,9 @@ interface ActiveStream {
 
 export class InstanceEventBridge {
   private readonly streams = new Map<string, ActiveStream>()
+  private readonly lastLogTime = new Map<string, number>()
+  private readonly sessionLastBusyTime = new Map<string, number>()
+  private readonly sessionIdleTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   constructor(private readonly options: InstanceEventBridgeOptions) {
     const bus = this.options.eventBus
@@ -143,6 +165,13 @@ export class InstanceEventBridge {
   }
 
   private processChunk(chunk: string, workspaceId: string) {
+    const now = Date.now()
+    const lastTime = activityThrottleTime.get(workspaceId) ?? 0
+    if (now - lastTime >= ACTIVITY_THROTTLE_MS) {
+      this.options.workspaceManager.recordActivity(workspaceId)
+      activityThrottleTime.set(workspaceId, now)
+    }
+
     const lines = chunk.split(/\r?\n/)
     const dataLines: string[] = []
 
@@ -190,13 +219,98 @@ export class InstanceEventBridge {
         return
       }
 
+      this.trackSessionState(workspaceId, event as any)
+
       this.options.logger.debug({ workspaceId, eventType: (event as any).type }, "Instance SSE event received")
       if (this.options.logger.isLevelEnabled("trace")) {
         this.options.logger.trace({ workspaceId, event }, "Instance SSE event payload")
       }
+
+      if ((event as any).type === "workspace.log") {
+        const now = Date.now()
+        const last = this.lastLogTime.get(workspaceId) ?? 0
+        if (now - last < LOG_THROTTLE_MS) {
+          return
+        }
+        this.lastLogTime.set(workspaceId, now)
+      }
+
       this.options.eventBus.publish({ type: "instance.event", instanceId: workspaceId, event })
     } catch (error) {
       this.options.logger.warn({ workspaceId, chunk: payload, err: error }, "Failed to parse instance SSE payload")
+    }
+  }
+
+  private extractSessionId(event: { type: string; properties?: Record<string, unknown> }): string | undefined {
+    const props = event.properties
+    if (!props) return undefined
+    return (props.sessionID ?? props.sessionId ?? props.id) as string | undefined
+  }
+
+  private trackSessionState(workspaceId: string, event: { type: string; properties?: Record<string, unknown> }): void {
+    const eventType = event.type
+    const sessionId = this.extractSessionId(event)
+
+    if (IDLE_EVENTS.has(eventType)) {
+      const parentSessionId = event.properties?.parentSessionID as string | undefined
+      const isMainSession = !parentSessionId
+
+      this.options.logger.info(
+        { workspaceId, sessionId, parentSessionId, isMainSession },
+        "Session idle event received"
+      )
+
+      this.options.workspaceManager.markIdle(workspaceId)
+
+      if (this.options.autoContinueManager && sessionId) {
+        this.options.autoContinueManager.onSessionIdle(workspaceId, sessionId, isMainSession)
+      }
+      return
+    }
+
+    if (BUSY_EVENTS.has(eventType)) {
+      this.options.workspaceManager.markBusy(workspaceId)
+
+      if (this.options.autoContinueManager) {
+        if (sessionId) {
+          this.options.autoContinueManager.onSessionBusy(workspaceId, sessionId)
+        }
+      }
+
+      if (sessionId) {
+        const timerKey = `${workspaceId}:${sessionId}`
+        this.sessionLastBusyTime.set(timerKey, Date.now())
+
+        const existingTimer = this.sessionIdleTimers.get(timerKey)
+        if (existingTimer) {
+          clearTimeout(existingTimer)
+          this.sessionIdleTimers.delete(timerKey)
+        }
+
+        const timer = setTimeout(() => {
+          this.sessionIdleTimers.delete(timerKey)
+          const lastBusy = this.sessionLastBusyTime.get(timerKey)
+          if (!lastBusy) return
+
+          const now = Date.now()
+          if (now - lastBusy < SILENCE_IDLE_THRESHOLD_MS - 100) return
+
+          this.options.logger.info(
+            { workspaceId, sessionId, silenceMs: now - lastBusy },
+            "Silence-based idle detected"
+          )
+
+          this.options.workspaceManager.markIdle(workspaceId)
+
+          if (this.options.autoContinueManager) {
+            const parentSessionId = event.properties?.parentSessionID as string | undefined
+            const isMainSession = !parentSessionId
+            this.options.autoContinueManager.onSessionIdle(workspaceId, sessionId, isMainSession)
+          }
+        }, SILENCE_IDLE_THRESHOLD_MS)
+
+        this.sessionIdleTimers.set(timerKey, timer)
+      }
     }
   }
 

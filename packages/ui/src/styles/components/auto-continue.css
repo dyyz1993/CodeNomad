@@ -1,0 +1,186 @@
+.auto-continue-trigger {
+  display: flex;
+  align-items: center;
+}
+
+.auto-continue-btn {
+  background: none;
+  border: none;
+  padding: 0.25rem;
+  cursor: pointer;
+  color: var(--text-muted, rgba(255, 255, 255, 0.35));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  position: relative;
+}
+
+.auto-continue-btn:hover {
+  color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+  background: var(--surface-tertiary, rgba(0, 0, 0, 0.15));
+}
+
+.auto-continue-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent, #6366f1);
+}
+
+.auto-continue-dialog {
+  max-width: 420px;
+  padding: 1.25rem;
+}
+
+.auto-continue-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: var(--text-primary, rgba(255, 255, 255, 0.9));
+}
+
+.auto-continue-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.auto-continue-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.auto-continue-field-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+}
+
+.auto-continue-field-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.auto-continue-checkbox {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent, #6366f1);
+  cursor: pointer;
+  margin: 0;
+}
+
+.auto-continue-number-input {
+  width: 5rem;
+  font-size: 0.8125rem;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  border-radius: 0.25rem;
+  background: var(--surface-primary, rgba(0, 0, 0, 0.2));
+  color: var(--text-primary, rgba(255, 255, 255, 0.9));
+  font-family: inherit;
+}
+
+.auto-continue-number-input:focus {
+  outline: none;
+  border-color: var(--accent, #6366f1);
+}
+
+.auto-continue-unit {
+  font-size: 0.75rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.35));
+}
+
+.auto-continue-textarea {
+  width: 100%;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  padding: 0.5rem;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  border-radius: 0.25rem;
+  background: var(--surface-primary, rgba(0, 0, 0, 0.2));
+  color: var(--text-primary, rgba(255, 255, 255, 0.9));
+  resize: vertical;
+  min-height: 3rem;
+  font-family: inherit;
+}
+
+.auto-continue-textarea:focus {
+  outline: none;
+  border-color: var(--accent, #6366f1);
+}
+
+.auto-continue-textarea::placeholder {
+  color: var(--text-muted, rgba(255, 255, 255, 0.3));
+}
+
+.auto-continue-status {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.35));
+  padding: 0.375rem 0;
+}
+
+.auto-continue-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+}
+
+.auto-continue-btn-primary {
+  font-size: 0.8125rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.25rem;
+  border: none;
+  cursor: pointer;
+  background: var(--accent, #6366f1);
+  color: #fff;
+  font-weight: 500;
+}
+
+.auto-continue-btn-primary:hover {
+  opacity: 0.9;
+}
+
+.auto-continue-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.auto-continue-btn-secondary {
+  font-size: 0.8125rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+}
+
+.auto-continue-btn-secondary:hover {
+  background: var(--surface-tertiary, rgba(0, 0, 0, 0.15));
+}
+
+.session-footer-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  background: var(--surface-tertiary, rgba(0, 0, 0, 0.15));
+}
+
+@import "./auto-continue-indicator.css";

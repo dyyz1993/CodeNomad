@@ -5,6 +5,8 @@ import type { ClientPart } from "../../types/message"
 import MessageSection from "../message-section"
 import { messageStoreBus } from "../../stores/message-v2/bus"
 import PromptInput from "../prompt-input"
+import AutoContinueControls from "../auto-continue-controls"
+import FilePreview from "../file-preview"
 import PromptAttachmentsBar from "../prompt-input/PromptAttachmentsBar"
 import { getAttachments, removeAttachment } from "../../stores/attachments"
 import { instances } from "../../stores/instances"
@@ -382,6 +384,17 @@ export const SessionView: Component<SessionViewProps> = (props) => {
                 onAbortSession={handleAbortSession}
                 registerPromptInputApi={registerPromptInputApi}
                 />
+              <div class="session-footer-tools">
+                <AutoContinueControls
+                  workspaceId={props.instanceId}
+                  sessionId={activeSession.id}
+                  isParentSession={!activeSession.parentId}
+                />
+                <FilePreview
+                  instanceId={props.instanceId}
+                  workspacePath={props.instanceFolder}
+                />
+              </div>
             </div>
           )
         }}
