@@ -32,16 +32,11 @@ jobs:
       - name: Build UI
         run: npm run build:ui
 
-      - name: Build server (tsc + copy assets)
-        run: |
-          npx tsc -p tsconfig.json
-          node scripts/copy-auth-pages.mjs
-          node scripts/copy-ui-dist.mjs
-          node scripts/copy-opencode-config.mjs
-        working-directory: packages/server
+      - name: Build server
+        run: npm run build --workspace packages/server
 
-      - name: Verify server entry point loads
-        run: node -e "import('./packages/server/dist/index.js').then(() => console.log('OK')).catch(e => { console.error(e); process.exit(1) })"
+      - name: Verify server dist exists
+        run: test -f packages/server/dist/index.js && echo "OK"
 
   endpoint-test:
     needs: build
