@@ -72,7 +72,16 @@ jobs:
         run: npm run build --workspace packages/server
 
       - name: Run tests
-        run: npm test --workspace packages/server
+        run: |
+          cd packages/server
+          TEST_FILES=$(find dist -path '*/__tests__/*.test.js' | sort)
+          if [ -z "$TEST_FILES" ]; then
+            echo "No test files found"
+            exit 0
+          fi
+          echo "Running tests:"
+          echo "$TEST_FILES"
+          echo "$TEST_FILES" | xargs node --test
 
       - name: Set publish metadata
         shell: bash
