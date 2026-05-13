@@ -44,6 +44,7 @@ const AutoContinueCountdown: Component<AutoContinueCountdownProps> = (props) => 
 
   const startPolling = () => {
     stopPolling()
+    if (!props.sessionId) return
     pollTimer = setInterval(async () => {
       try {
         const data = await serverApi.fetchAutoContinue(props.instanceId, props.sessionId)

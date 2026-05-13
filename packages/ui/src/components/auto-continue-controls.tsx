@@ -53,7 +53,7 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
   const sessionBusy = () => isSessionBusy(props.workspaceId, props.sessionId)
 
   const loadConfig = async () => {
-    if (!props.isParentSession) return
+    if (!props.isParentSession || !props.sessionId) return
     try {
       const data = await serverApi.fetchAutoContinue(props.workspaceId, props.sessionId)
       setConfig((prev) => ({ ...prev, ...data }))

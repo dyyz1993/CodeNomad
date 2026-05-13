@@ -65,14 +65,17 @@ const SessionList: Component<SessionListProps> = (props) => {
     let timer: ReturnType<typeof setInterval>
     const poll = async () => {
       try {
-        const data = await serverApi.fetchAutoContinue(props.instanceId)
+        const threads = filteredThreads()
+        if (threads.length === 0) return
+        const mainSessionId = threads[0].parent.id
+        const data = await serverApi.fetchAutoContinue(props.instanceId, mainSessionId)
         if (!data.enabled) {
           setAcCountdowns({})
           return
         }
         const newMap: Record<string, number> = {}
         if (data.countdownRemaining > 0) {
-          newMap["main"] = data.countdownRemaining
+          newMap[mainSessionId] = data.countdownRemaining
         }
         setAcCountdowns(newMap)
       } catch { /* skip */ }
