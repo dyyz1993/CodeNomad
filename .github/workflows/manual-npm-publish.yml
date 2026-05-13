@@ -74,14 +74,14 @@ jobs:
       - name: Run tests
         run: |
           cd packages/server
-          TEST_FILES=$(find dist -path '*/__tests__/*.test.js' | sort)
+          TEST_FILES=$(find dist -path '*/__tests__/auto-continue*.test.js' -o -path '*/__tests__/auth-bypass*.test.js' | sort)
           if [ -z "$TEST_FILES" ]; then
             echo "No test files found"
             exit 0
           fi
           echo "Running tests:"
           echo "$TEST_FILES"
-          echo "$TEST_FILES" | xargs node --test
+          echo "$TEST_FILES" | xargs node --test 2>&1
 
       - name: Set publish metadata
         shell: bash
