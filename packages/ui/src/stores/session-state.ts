@@ -710,9 +710,32 @@ async function cleanupBlankSessions(instanceId: string, excludeSessionId?: strin
   }
 }
 
+let pendingUpdaters: Array<(prev: Map<string, Map<string, Session>>) => Map<string, Map<string, Session>>> = []
+let flushScheduled = false
+
+function queueSessionUpdate(updater: (prev: Map<string, Map<string, Session>>) => Map<string, Map<string, Session>>): void {
+  pendingUpdaters.push(updater)
+  if (!flushScheduled) {
+    flushScheduled = true
+    queueMicrotask(() => {
+      flushScheduled = false
+      const updaters = pendingUpdaters
+      pendingUpdaters = []
+      setSessions((prev) => {
+        let result = prev
+        for (const u of updaters) {
+          result = u(result)
+        }
+        return result
+      })
+    })
+  }
+}
+
 export {
   sessions,
   setSessions,
+  queueSessionUpdate,
   activeSessionId,
   setActiveSessionId,
   activeParentSessionId,

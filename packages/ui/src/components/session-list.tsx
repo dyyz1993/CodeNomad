@@ -61,12 +61,25 @@ const SessionList: Component<SessionListProps> = (props) => {
   // Auto-continue countdown per session (sessionId → remaining seconds)
   const [acCountdowns, setAcCountdowns] = createSignal<Record<string, number>>({})
 
+  let acPollTimer: ReturnType<typeof setInterval> | undefined
+  let acPollInFlight = false
+
+  const stopACPolling = () => {
+    if (acPollTimer !== undefined) {
+      clearInterval(acPollTimer)
+      acPollTimer = undefined
+    }
+  }
+
   const startACPolling = () => {
-    let timer: ReturnType<typeof setInterval>
-    const poll = async () => {
+    stopACPolling()
+    if (typeof window === "undefined") return
+    acPollTimer = setInterval(async () => {
+      if (acPollInFlight) return
+      acPollInFlight = true
       try {
         const threads = filteredThreads()
-        if (threads.length === 0) return
+        if (threads.length === 0) { acPollInFlight = false; return }
         const mainSessionId = threads[0].parent.id
         const data = await serverApi.fetchAutoContinue(props.instanceId, mainSessionId)
         if (!data.enabled) {
@@ -79,16 +92,16 @@ const SessionList: Component<SessionListProps> = (props) => {
         }
         setAcCountdowns(newMap)
       } catch { /* skip */ }
-    }
-    timer = setInterval(poll, 2000) as any
-    onCleanup(() => clearInterval(timer))
+      finally { acPollInFlight = false }
+    }, 10000) as any
+    onCleanup(stopACPolling)
   }
 
   createEffect(() => { startACPolling() })
 
   createEffect(() => {
     if (typeof window === "undefined") return
-    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    const timer = window.setInterval(() => setNow(Date.now()), 30000)
     onCleanup(() => window.clearInterval(timer))
   })
 

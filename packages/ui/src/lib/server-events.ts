@@ -20,12 +20,19 @@ class ServerEvents {
   private openHandlers = new Set<() => void>()
   private source: EventSource | null = null
   private retryDelay = RETRY_BASE_DELAY
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private reconnecting = false
 
   constructor() {
     this.connect()
   }
 
   private connect() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    this.reconnecting = false
     if (this.source) {
       this.source.close()
     }
@@ -47,17 +54,24 @@ class ServerEvents {
     this.source.onopen = () => {
       logSse("Events stream connected")
       this.retryDelay = RETRY_BASE_DELAY
+      this.reconnecting = false
       this.openHandlers.forEach((handler) => handler())
     }
   }
 
   private scheduleReconnect() {
+    if (this.reconnecting) return
+    this.reconnecting = true
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+    }
     if (this.source) {
       this.source.close()
       this.source = null
     }
     logSse("Events stream disconnected, scheduling reconnect", { delayMs: this.retryDelay })
-    setTimeout(() => {
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
       this.retryDelay = Math.min(this.retryDelay * 2, RETRY_MAX_DELAY)
       this.connect()
     }, this.retryDelay)

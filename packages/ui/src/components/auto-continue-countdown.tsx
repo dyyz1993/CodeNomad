@@ -41,19 +41,24 @@ const AutoContinueCountdown: Component<AutoContinueCountdownProps> = (props) => 
   })
 
   let pollTimer: ReturnType<typeof setInterval> | undefined
+  let pollInFlight = false
 
   const startPolling = () => {
     stopPolling()
     if (!props.sessionId) return
     pollTimer = setInterval(async () => {
+      if (pollInFlight) return
+      pollInFlight = true
       try {
         const data = await serverApi.fetchAutoContinue(props.instanceId, props.sessionId)
         setEnabled(data.enabled)
         setCountdown(data.countdownRemaining)
       } catch (err) {
         log.warn("Failed to poll auto-continue state", err)
+      } finally {
+        pollInFlight = false
       }
-    }, 1000)
+    }, 5000)
   }
 
   const stopPolling = () => {

@@ -47,7 +47,7 @@ import {
   type SessionRetryState,
   type SessionStatus,
 } from "../types/session"
-import { ensureSessionParentExpanded, sessions, setSessions, syncInstanceSessionIndicator, withSession } from "./session-state"
+import { ensureSessionParentExpanded, queueSessionUpdate, sessions, setSessions, syncInstanceSessionIndicator, withSession } from "./session-state"
 import { normalizeMessagePart } from "./message-v2/normalizers"
 import { updateSessionInfo } from "./message-v2/session-info"
 import { tGlobal } from "../lib/i18n"
@@ -217,7 +217,7 @@ async function fetchSessionInfo(instanceId: string, sessionId: string, directory
     let updatedInstanceSessions: Map<string, Session> | undefined
     let shouldExpandParent: string | null = null
 
-    setSessions((prev) => {
+    queueSessionUpdate((prev) => {
       const next = new Map(prev)
       const instanceSessions = next.get(instanceId) ?? new Map<string, Session>()
       const existing = instanceSessions.get(sessionId)
@@ -468,7 +468,7 @@ function handleSessionUpdate(instanceId: string, event: EventSessionUpdated): vo
 
     let updatedInstanceSessions: Map<string, Session> | undefined
 
-    setSessions((prev) => {
+    queueSessionUpdate((prev) => {
       const next = new Map(prev)
       const instanceSessions = next.get(instanceId) ?? new Map<string, Session>()
       instanceSessions.set(newSession.id, newSession)

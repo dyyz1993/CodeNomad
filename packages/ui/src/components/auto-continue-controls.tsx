@@ -71,10 +71,15 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
   }
 
   let pollTimer: ReturnType<typeof setInterval> | undefined
+  let pollInFlight = false
 
   const startPolling = () => {
     stopPolling()
-    pollTimer = setInterval(() => { void loadConfig() }, 1000)
+    pollTimer = setInterval(() => {
+      if (pollInFlight) return
+      pollInFlight = true
+      loadConfig().finally(() => { pollInFlight = false })
+    }, 5000)
   }
 
   const stopPolling = () => {
