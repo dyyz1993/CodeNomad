@@ -1,15 +1,15 @@
 import { tool } from "@opencode-ai/plugin/tool"
 import type { CodeNomadConfig } from "./request"
+import { createCodeNomadRequester } from "./request"
 
-/**
- * Auto-continue tools: let the AI cancel or pause the auto-continue countdown.
- *
- * The server's AutoContinueManager exposes:
- *  - POST /api/workspaces/:id/auto-continue/:sessionId/cancel  → cancel countdown
- *  - PUT   /api/workspaces/:id/auto-continue/:sessionId        → update config (set enabled=false to pause)
- *  - GET   /api/workspaces/:id/auto-continue/:sessionId        → read state (including countdownRemaining)
- */
 export function createAutoContinueTools(config: CodeNomadConfig) {
+  const api = createCodeNomadRequester(config)
+
+  const acPath = (sessionId: string, suffix?: string) => {
+    const base = `/api/workspaces/${encodeURIComponent(config.instanceId)}/auto-continue/${encodeURIComponent(sessionId)}`
+    return suffix ? `${base}/${suffix}` : base
+  }
+
   return {
     auto_continue_cancel: tool({
       description: [
@@ -20,24 +20,10 @@ export function createAutoContinueTools(config: CodeNomadConfig) {
       args: {},
       async execute(_args, ctx) {
         const sessionId = ctx.sessionID
-        if (!sessionId) {
-          return "Error: no session ID available in context."
-        }
+        if (!sessionId) return "Error: no session ID available in context."
 
         try {
-          const baseUrl = config.baseUrl.replace(/\/+$/, "")
-          const url = `${baseUrl}/api/workspaces/${encodeURIComponent(config.instanceId)}/auto-continue/${encodeURIComponent(sessionId)}/cancel`
-
-          const response = await fetch(url, {
-            method: "POST",
-          })
-
-          if (!response.ok) {
-            const text = await response.text().catch(() => "")
-            return `Failed to cancel auto-continue (${response.status}): ${text}`
-          }
-
-          const data = (await response.json()) as { cancelled: boolean }
+          const data = await api.requestJson<{ cancelled: boolean }>(acPath(sessionId, "cancel"), { method: "POST" })
           return data.cancelled
             ? "Auto-continue countdown cancelled successfully."
             : "No active countdown to cancel (may have already triggered or was not active)."
@@ -56,30 +42,16 @@ export function createAutoContinueTools(config: CodeNomadConfig) {
       args: {},
       async execute(_args, ctx) {
         const sessionId = ctx.sessionID
-        if (!sessionId) {
-          return "Error: no session ID available in context."
-        }
+        if (!sessionId) return "Error: no session ID available in context."
 
         try {
-          const baseUrl = config.baseUrl.replace(/\/+$/, "")
-          const url = `${baseUrl}/api/workspaces/${encodeURIComponent(config.instanceId)}/auto-continue/${encodeURIComponent(sessionId)}`
+          await api.requestVoid(acPath(sessionId, "cancel"), { method: "POST" }).catch(() => {})
 
-          // Cancel any running countdown AND disable auto-continue
-          const cancelUrl = `${baseUrl}/api/workspaces/${encodeURIComponent(config.instanceId)}/auto-continue/${encodeURIComponent(sessionId)}/cancel`
-          await fetch(cancelUrl, { method: "POST" }).catch(() => {})
-
-          const response = await fetch(url, {
+          const data = await api.requestJson<{ enabled: boolean }>(acPath(sessionId), {
             method: "PUT",
-            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ enabled: false }),
           })
 
-          if (!response.ok) {
-            const text = await response.text().catch(() => "")
-            return `Failed to pause auto-continue (${response.status}): ${text}`
-          }
-
-          const data = (await response.json()) as { enabled: boolean }
           return `Auto-continue paused (enabled=${data.enabled}). The countdown has been stopped.`
         } catch (err) {
           return `Error pausing auto-continue: ${err instanceof Error ? err.message : String(err)}`
@@ -95,23 +67,10 @@ export function createAutoContinueTools(config: CodeNomadConfig) {
       args: {},
       async execute(_args, ctx) {
         const sessionId = ctx.sessionID
-        if (!sessionId) {
-          return "Error: no session ID available in context."
-        }
+        if (!sessionId) return "Error: no session ID available in context."
 
         try {
-          const baseUrl = config.baseUrl.replace(/\/+$/, "")
-          const url = `${baseUrl}/api/workspaces/${encodeURIComponent(config.instanceId)}/auto-continue/${encodeURIComponent(sessionId)}`
-
-          const response = await fetch(url, {
-            headers: { Accept: "application/json" },
-          })
-
-          if (!response.ok) {
-            return `Auto-continue not configured for this session (status ${response.status}).`
-          }
-
-          const data = (await response.json()) as {
+          const data = await api.requestJson<{
             enabled: boolean
             prompt: string
             cooldownMs: number
@@ -120,7 +79,7 @@ export function createAutoContinueTools(config: CodeNomadConfig) {
             triggerCount: number
             lastTriggerAt: number
             countdownRemaining: number
-          }
+          }>(acPath(sessionId))
 
           const lines = [
             `Enabled: ${data.enabled}`,
