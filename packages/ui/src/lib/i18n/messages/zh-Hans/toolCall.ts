@@ -134,4 +134,13 @@ export const toolCallMessages = {
   "toolCall.applyPatch.title.withFileCount.one": "{tool}（{count} 个文件）",
   "toolCall.applyPatch.title.withFileCount.other": "{tool}（{count} 个文件）",
   "toolCall.applyPatch.fileFallback": "文件 {number}",
+
+  "toolCall.renderer.action.previewing": "正在预览...",
+  "toolCall.renderer.preview.clickToOpen": "点击打开预览",
+  "toolCall.renderer.preview.dialog.fullscreen": "全屏",
+  "toolCall.renderer.preview.dialog.openNewTab": "在新标签页打开",
+  "toolCall.renderer.preview.dialog.close": "关闭",
+  "toolCall.renderer.preview.noMapping.title": "未找到公网地址映射",
+  "toolCall.renderer.preview.noMapping.desc": "端口 {port} 尚未配置子域名代理。请在 设置 > 代理 中创建。",
+  "toolCall.renderer.preview.resolving": "正在解析公网地址...",
 } as const

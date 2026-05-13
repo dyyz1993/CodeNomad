@@ -1,0 +1,33 @@
+.auto-continue-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: var(--surface-tertiary, rgba(0, 0, 0, 0.15));
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  font-size: 13px;
+  color: var(--text-muted, rgba(255, 255, 255, 0.35));
+}
+
+.auto-continue-bar-countdown {
+  font-weight: 600;
+  color: var(--status-warning, #f59e0b);
+  font-variant-numeric: tabular-nums;
+  min-width: 24px;
+  text-align: center;
+}
+
+.auto-continue-bar-cancel {
+  background: none;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+}
+
+.auto-continue-bar-cancel:hover {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.15));
+}

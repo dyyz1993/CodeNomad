@@ -65,6 +65,7 @@ interface CliOptions {
   generateToken: boolean
   dangerouslySkipAuth: boolean
   subdomainBase?: string
+  subdomainExternalPort?: number
 }
 
 const DEFAULT_HOST = "127.0.0.1"
@@ -129,6 +130,10 @@ function parseCliOptions(argv: string[]): CliOptions {
     .addOption(
       new Option("--subdomain-base <domain>", "Base domain for subdomain proxy (e.g. yourdomain.com)")
         .env("CODENOMAD_SUBDOMAIN_BASE"),
+    )
+    .addOption(
+      new Option("--subdomain-external-port <port>", "External HTTPS port for subdomain proxy URLs (e.g. 8443)")
+        .env("CODENOMAD_SUBDOMAIN_EXTERNAL_PORT"),
     )
 
   program.parse(argv, { from: "user" })
@@ -207,6 +212,7 @@ function parseCliOptions(argv: string[]): CliOptions {
     generateToken: Boolean(parsed.generateToken),
     dangerouslySkipAuth: Boolean(parsed.dangerouslySkipAuth),
     subdomainBase: (parsed as any).subdomainBase as string | undefined,
+    subdomainExternalPort: (parsed as any).subdomainExternalPort ? Number((parsed as any).subdomainExternalPort) : undefined,
   }
 }
 
@@ -340,6 +346,7 @@ async function main() {
     ? new SubdomainProxyManager({
         settings,
         baseDomain: options.subdomainBase,
+        externalPort: options.subdomainExternalPort,
         logger: logger.child({ component: "subdomain-proxy" }),
       })
     : undefined

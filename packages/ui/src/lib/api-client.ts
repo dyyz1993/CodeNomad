@@ -466,6 +466,7 @@ export const serverApi = {
     confirmSeconds: number
     triggerCount: number
     lastTriggerAt: number
+    countdownRemaining: number
   }> {
     return request(
       `/api/workspaces/${encodeURIComponent(workspaceId)}/auto-continue/${encodeURIComponent(sessionId)}`,
@@ -494,6 +495,18 @@ export const serverApi = {
       {
         method: "PUT",
         body: JSON.stringify(updates),
+      },
+    )
+  },
+
+  cancelAutoContinue(
+    workspaceId: string,
+    sessionId: string,
+  ): Promise<{ cancelled: boolean }> {
+    return request(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/auto-continue/${encodeURIComponent(sessionId)}/cancel`,
+      {
+        method: "POST",
       },
     )
   },

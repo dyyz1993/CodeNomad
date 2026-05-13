@@ -97,6 +97,9 @@ export class InstanceEventBridge {
     while (!signal.aborted) {
       const port = this.options.workspaceManager.getInstancePort(workspaceId)
       if (!port) {
+        if (!this.options.workspaceManager.get(workspaceId)) {
+          break
+        }
         await this.delay(RECONNECT_DELAY_MS, signal)
         continue
       }

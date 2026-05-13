@@ -302,7 +302,13 @@ const FilePreview: Component<FilePreviewProps> = (props) => {
                         <button
                           type="button"
                           class="file-preview-proxy-item"
-                          onClick={() => setUrl(mapping.fullUrl)}
+                          onClick={() => {
+                            let url = mapping.fullUrl
+                            if (url.startsWith('http:') && location.protocol === 'https:') {
+                              url = url.replace(/^http:/, 'https:')
+                            }
+                            setUrl(url)
+                          }}
                         >
                           <span class="file-preview-proxy-name">{mapping.name}</span>
                           <span class="file-preview-proxy-url">:{mapping.targetPort}</span>

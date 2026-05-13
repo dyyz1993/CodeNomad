@@ -10,4 +10,6 @@
 @import "./components/permission-notification.css";
 @import "./components/settings-screen.css";
 @import "./components/auto-continue.css";
+@import "./components/auto-continue-countdown.css";
 @import "./components/file-preview.css";
+@import "./components/preview-tool.css";

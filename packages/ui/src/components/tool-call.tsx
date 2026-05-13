@@ -124,6 +124,7 @@ function ToolCallDetails(props: {
   isQuestionActive: () => boolean
   hasToolInput: () => boolean
   isToolInputVisible: () => boolean
+  preferCustomBody: Accessor<boolean>
   toolInput: () => Record<string, any> | undefined
   inputSectionExpanded: () => boolean
   outputSectionExpanded: () => boolean
@@ -505,7 +506,7 @@ function ToolCallDetails(props: {
   return (
     <div class="tool-call-details">
       <Show
-        when={props.isToolInputVisible() && props.hasToolInput()}
+        when={!props.preferCustomBody() && props.isToolInputVisible() && props.hasToolInput()}
         fallback={
           <>
             {renderToolBody()}
@@ -744,6 +745,7 @@ export default function ToolCall(props: ToolCallProps) {
   }
 
   const renderer = createMemo(() => resolveToolRenderer(toolName()))
+  const preferCustomBody = createMemo(() => renderer()?.preferCustomBody === true)
 
   const renderMarkdownStub: ToolRendererContext["renderMarkdown"] = () => null
   const renderAnsiStub: ToolRendererContext["renderAnsi"] = () => null
@@ -912,6 +914,7 @@ export default function ToolCall(props: ToolCallProps) {
           isQuestionActive={isQuestionActive}
           hasToolInput={hasToolInput}
           isToolInputVisible={isToolInputVisible}
+          preferCustomBody={preferCustomBody}
           toolInput={toolInput}
           inputSectionExpanded={inputSectionExpanded}
           outputSectionExpanded={outputSectionExpanded}

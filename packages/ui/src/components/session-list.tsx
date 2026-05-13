@@ -8,6 +8,7 @@ import SessionRenameDialog from "./session-rename-dialog"
 import { keyboardRegistry } from "../lib/keyboard-registry"
 import { showToastNotification } from "../lib/notifications"
 import { useI18n } from "../lib/i18n"
+import { serverApi } from "../lib/api-client"
 import { showConfirmDialog } from "../stores/alerts"
 import {
   deleteSession,
@@ -56,6 +57,31 @@ const SessionList: Component<SessionListProps> = (props) => {
   const [selectedSessionIds, setSelectedSessionIds] = createSignal<Set<string>>(new Set())
   const [reloadingSessionIds, setReloadingSessionIds] = createSignal<Set<string>>(new Set())
   const [now, setNow] = createSignal(Date.now())
+
+  // Auto-continue countdown per session (sessionId → remaining seconds)
+  const [acCountdowns, setAcCountdowns] = createSignal<Record<string, number>>({})
+
+  const startACPolling = () => {
+    let timer: ReturnType<typeof setInterval>
+    const poll = async () => {
+      try {
+        const data = await serverApi.fetchAutoContinue(props.instanceId)
+        if (!data.enabled) {
+          setAcCountdowns({})
+          return
+        }
+        const newMap: Record<string, number> = {}
+        if (data.countdownRemaining > 0) {
+          newMap["main"] = data.countdownRemaining
+        }
+        setAcCountdowns(newMap)
+      } catch { /* skip */ }
+    }
+    timer = setInterval(poll, 2000) as any
+    onCleanup(() => clearInterval(timer))
+  }
+
+  createEffect(() => { startACPolling() })
 
   createEffect(() => {
     if (typeof window === "undefined") return
@@ -523,6 +549,11 @@ const SessionList: Component<SessionListProps> = (props) => {
               <span class={`status-indicator session-status session-status-list ${statusClassName()}`} title={statusTooltip()}>
                 {needsInput() ? <ShieldAlert class="w-3.5 h-3.5" aria-hidden="true" /> : <span class="status-dot" />}
                 {statusText()}
+                <Show when={acCountdowns()[rowProps.sessionId] > 0}>
+                  <span class="ac-countdown-badge" title={t("autoContinueCountdown.message")}>
+                    ⏱️ {acCountdowns()[rowProps.sessionId]}s
+                  </span>
+                </Show>
               </span>
               <Show when={showWorktreeBadge()}>
                 <span class="status-indicator session-status-list worktree-indicator" title={`Worktree: ${worktreeSlug()}`}>

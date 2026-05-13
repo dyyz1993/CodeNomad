@@ -1,9 +1,11 @@
 import { Dialog } from "@kobalte/core/dialog"
-import { createSignal, Show, type Component } from "solid-js"
-import { RefreshCw, Timer, Cog } from "lucide-solid"
+import { createSignal, createEffect, Show, onCleanup, type Component } from "solid-js"
+import { RefreshCw, Timer } from "lucide-solid"
 import { serverApi } from "../lib/api-client"
 import { useI18n } from "../lib/i18n"
 import { getLogger } from "../lib/logger"
+import { isSessionBusy } from "../stores/session-status"
+import { sessions } from "../stores/session-state"
 
 const log = getLogger("session")
 
@@ -14,6 +16,7 @@ interface AutoContinueConfig {
   maxTriggers: number
   confirmSeconds: number
   triggerCount: number
+  countdownRemaining: number
 }
 
 interface AutoContinueControlsProps {
@@ -31,6 +34,7 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
     maxTriggers: 20,
     confirmSeconds: 5,
     triggerCount: 0,
+    countdownRemaining: 0,
   })
   const [dialogOpen, setDialogOpen] = createSignal(false)
   const closeDialog = () => { setDialogOpen(false) }
@@ -41,11 +45,21 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
   const [loading, setLoading] = createSignal(false)
   const [initialized, setInitialized] = createSignal(false)
 
+  const sessionStatus = () => {
+    const session = sessions().get(props.workspaceId)?.get(props.sessionId)
+    return session?.status ?? "idle"
+  }
+
+  const sessionBusy = () => isSessionBusy(props.workspaceId, props.sessionId)
+
   const loadConfig = async () => {
     if (!props.isParentSession) return
     try {
       const data = await serverApi.fetchAutoContinue(props.workspaceId, props.sessionId)
       setConfig((prev) => ({ ...prev, ...data }))
+      if (dialogOpen()) {
+        setDraftEnabled(data.enabled)
+      }
     } catch (err) {
       log.warn("Failed to fetch auto-continue config", err)
     }
@@ -55,6 +69,41 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
     setInitialized(true)
     loadConfig()
   }
+
+  let pollTimer: ReturnType<typeof setInterval> | undefined
+
+  const startPolling = () => {
+    stopPolling()
+    pollTimer = setInterval(() => { void loadConfig() }, 1000)
+  }
+
+  const stopPolling = () => {
+    if (pollTimer !== undefined) {
+      clearInterval(pollTimer)
+      pollTimer = undefined
+    }
+  }
+
+  createEffect(() => {
+    if (config().enabled && !sessionBusy() && sessionStatus() === "idle") {
+      startPolling()
+    } else {
+      stopPolling()
+    }
+    onCleanup(stopPolling)
+  })
+
+  let prevBusy = true
+  createEffect(() => {
+    const busy = sessionBusy()
+    if (prevBusy && !busy && sessionStatus() === "idle") {
+      void loadConfig()
+    }
+    prevBusy = busy
+  })
+
+  const countdown = () => config().countdownRemaining ?? 0
+  const showCountdown = () => config().enabled && countdown() > 0 && !sessionBusy()
 
   const openDialog = () => {
     const c = config()
@@ -95,8 +144,11 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
           aria-label={t("autoContinue.label")}
         >
           <Timer class="w-3.5 h-3.5" />
-          <Show when={config().enabled}>
+          <Show when={config().enabled && !showCountdown()}>
             <span class="auto-continue-dot" />
+          </Show>
+          <Show when={showCountdown()}>
+            <span class="auto-continue-countdown-badge">{countdown()}s</span>
           </Show>
         </button>
 

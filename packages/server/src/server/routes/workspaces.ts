@@ -145,6 +145,7 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: RouteDeps) {
         ...config,
         triggerCount: state?.triggerCount ?? 0,
         lastTriggerAt: state?.lastTriggerAt ?? 0,
+        countdownRemaining: state?.countdownRemaining ?? 0,
       }
     })
 
@@ -159,6 +160,18 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: RouteDeps) {
       const body = AutoContinueUpdateSchema.parse(request.body ?? {})
       const config = deps.autoContinueManager!.setConfig(request.params.id, request.params.sessionId, body)
       return config
+    })
+
+    app.post<{
+      Params: { id: string; sessionId: string }
+    }>("/api/workspaces/:id/auto-continue/:sessionId/cancel", async (request, reply) => {
+      const workspace = deps.workspaceManager.get(request.params.id)
+      if (!workspace) {
+        reply.code(404)
+        return { error: "Workspace not found" }
+      }
+      const cancelled = deps.autoContinueManager!.cancelCountdown(request.params.id, request.params.sessionId)
+      return { cancelled }
     })
   }
 }

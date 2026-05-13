@@ -20,6 +20,7 @@ interface SessionAutoContinueState {
   lastTriggerAt: number
   confirmTimer: ReturnType<typeof setTimeout> | null
   idleCheckCount: number
+  countdownRemaining: number
 }
 
 const DEFAULT_CONFIG: AutoContinueConfig = {
@@ -75,6 +76,7 @@ export class AutoContinueManager {
         lastTriggerAt: 0,
         confirmTimer: null,
         idleCheckCount: 0,
+        countdownRemaining: 0,
       }
       this.sessions.set(k, state)
     }
@@ -122,6 +124,7 @@ export class AutoContinueManager {
           lastTriggerAt: entry.lastTriggerAt,
           confirmTimer: null,
           idleCheckCount: 0,
+          countdownRemaining: 0,
         })
       }
       if (entries.length > 0) {
@@ -136,6 +139,7 @@ export class AutoContinueManager {
     config: AutoContinueConfig
     triggerCount: number
     lastTriggerAt: number
+    countdownRemaining: number
   } | null {
     const state = this.sessions.get(this.key(workspaceId, sessionId))
     if (!state) return null
@@ -143,6 +147,7 @@ export class AutoContinueManager {
       config: { ...state.config },
       triggerCount: state.triggerCount,
       lastTriggerAt: state.lastTriggerAt,
+      countdownRemaining: state.countdownRemaining,
     }
   }
 
@@ -187,6 +192,7 @@ export class AutoContinueManager {
       state.confirmTimer = null
     }
     state.idleCheckCount = 0
+    state.countdownRemaining = 0
   }
 
   private startIdleConfirmation(
@@ -195,10 +201,13 @@ export class AutoContinueManager {
     state: SessionAutoContinueState,
   ): void {
     const requiredChecks = state.config.confirmSeconds
+    state.countdownRemaining = requiredChecks
 
     const check = () => {
       state.idleCheckCount++
+      state.countdownRemaining = Math.max(0, requiredChecks - state.idleCheckCount)
       if (state.idleCheckCount >= requiredChecks) {
+        state.countdownRemaining = 0
         this.triggerAutoContinue(workspaceId, sessionId, state)
       } else {
         state.confirmTimer = setTimeout(check, 1000)
@@ -251,11 +260,17 @@ export class AutoContinueManager {
       const targetUrl = `http://127.0.0.1:${port}/session/${encodeURIComponent(sessionId)}/prompt_async`
       this.logger.info({ workspaceId, sessionId }, "Auto-continue: sending prompt")
 
+      const wrappedPrompt = [
+        `<auto-continue count="${state.triggerCount + 1}/${state.config.maxTriggers}" at="${new Date().toISOString()}">`,
+        state.config.prompt,
+        `</auto-continue>`,
+      ].join("\n")
+
       const response = await fetch(targetUrl, {
         method: "POST",
         headers,
         body: JSON.stringify({
-          parts: [{ type: "text", text: state.config.prompt, synthetic: true }],
+          parts: [{ type: "text", text: wrappedPrompt }],
         }),
       })
 
@@ -275,6 +290,21 @@ export class AutoContinueManager {
     } catch (error) {
       this.logger.error({ workspaceId, sessionId, err: error }, "Auto-continue: error sending prompt")
     }
+  }
+
+  cancelCountdown(workspaceId: string, sessionId: string): boolean {
+    const k = this.key(workspaceId, sessionId)
+    const state = this.sessions.get(k)
+    if (!state) return false
+
+    if (state.confirmTimer) {
+      clearTimeout(state.confirmTimer)
+      state.confirmTimer = null
+    }
+    state.idleCheckCount = 0
+    state.countdownRemaining = 0
+    state.config.enabled = false  // 真正关掉，防止 idle 后重新触发
+    return true
   }
 
   removeSession(workspaceId: string, sessionId: string): void {

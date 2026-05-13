@@ -83,6 +83,7 @@ export interface ToolRenderer {
   getTitle?(context: ToolRendererContext): string | undefined
   getAction?(context: ToolRendererContext): string | undefined
   renderBody(context: ToolRendererContext): JSXElement | null
+  preferCustomBody?: boolean
 }
 
 export type ToolRendererMap = Record<string, ToolRenderer>

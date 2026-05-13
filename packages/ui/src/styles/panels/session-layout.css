@@ -505,6 +505,25 @@ session-sidebar-controls .selector-trigger-primary {
     min-width: 200px;
   }
 
+  .ac-countdown-badge {
+    font-size: 10px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: var(--accent, #6366f1);
+    color: #fff;
+    margin-left: 4px;
+    animation: ac-pulse 1s ease-in-out infinite;
+    white-space: nowrap;
+  }
+
+  @keyframes ac-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
   .session-item-base {
     @apply px-2 py-2;
   }

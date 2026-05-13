@@ -117,4 +117,7 @@ export const sessionMessages = {
   "autoContinue.save": "Save",
   "autoContinue.saving": "Saving...",
   "autoContinue.cancel": "Cancel",
+
+  "autoContinueCountdown.message": "until auto-continue",
+  "autoContinueCountdown.cancelBtn": "Cancel",
 } as const

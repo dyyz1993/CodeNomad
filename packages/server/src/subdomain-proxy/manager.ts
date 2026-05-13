@@ -15,6 +15,7 @@ interface SubdomainMapping {
 interface SubdomainProxyOptions {
   settings: SettingsService
   baseDomain: string
+  externalPort?: number
   logger: Logger
 }
 
@@ -139,8 +140,10 @@ export class SubdomainProxyManager {
     })
   }
 
-  getFullUrl(subdomain: string, protocol = "http"): string {
-    return `${protocol}://${subdomain}.${this.options.baseDomain}`
+  getFullUrl(subdomain: string, protocol = "https"): string {
+    const port = this.options.externalPort
+    const portSuffix = port && port !== 80 && port !== 443 ? `:${port}` : ""
+    return `${protocol}://${subdomain}.${this.options.baseDomain}${portSuffix}`
   }
 
   private persist(): void {

@@ -31,9 +31,34 @@
   background: var(--accent, #6366f1);
 }
 
+.auto-continue-countdown-badge {
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  padding: 1px 4px;
+  border-radius: 6px;
+  background: var(--accent, #6366f1);
+  color: #fff;
+  margin-left: 2px;
+  animation: auto-continue-pulse 1s ease-in-out infinite;
+}
+
+@keyframes auto-continue-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 .auto-continue-dialog {
-  max-width: 420px;
-  padding: 1.25rem;
+  position: fixed !important;
+  left: 50% !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  z-index: 51 !important;
+  width: min(520px, 90vw);
+  max-width: 90vw;
+  padding: 1.5rem;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
 }
 
 .auto-continue-dialog-title {

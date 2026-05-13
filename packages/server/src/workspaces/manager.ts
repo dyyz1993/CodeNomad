@@ -186,19 +186,28 @@ export class WorkspaceManager {
 
     this.options.logger.info({ workspaceId: id }, "Stopping workspace")
     const wasRunning = Boolean(workspace.pid)
+
+    // Remove from active tracking and publish "workspace.stopped" BEFORE
+    // killing the process.  This ordering is critical: InstanceEventBridge
+    // listens for "workspace.stopped" and aborts its SSE stream via
+    // stopStream().  If we kill the process first the SSE socket closes
+    // before the abort signal reaches it, producing a spurious "other side
+    // closed" error that the UI surfaces as a false "connection lost" dialog.
+    this.workspaces.delete(id)
+    this.opencodeAuth.delete(id)
+    this.autoContinueManager?.removeWorkspaceSessions(id)
+    clearWorkspaceSearchCache(workspace.path)
+    this.options.eventBus.publish({ type: "workspace.stopped", workspaceId: id })
+
+    // handleProcessExit (called from runtime when the child exits) checks
+    // this.workspaces.get(id) first and returns early when the workspace is
+    // already gone, preventing duplicate events.
     if (wasRunning) {
       await this.runtime.stop(id).catch((error) => {
         this.options.logger.warn({ workspaceId: id, err: error }, "Failed to stop workspace process cleanly")
       })
     }
 
-    this.workspaces.delete(id)
-    this.opencodeAuth.delete(id)
-    this.autoContinueManager?.removeWorkspaceSessions(id)
-    clearWorkspaceSearchCache(workspace.path)
-    if (!wasRunning) {
-      this.options.eventBus.publish({ type: "workspace.stopped", workspaceId: id })
-    }
     return workspace
   }
 

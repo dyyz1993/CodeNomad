@@ -134,4 +134,13 @@ export const toolCallMessages = {
   "toolCall.applyPatch.title.withFileCount.one": "{tool} ({count} file)",
   "toolCall.applyPatch.title.withFileCount.other": "{tool} ({count} files)",
   "toolCall.applyPatch.fileFallback": "File {number}",
+
+  "toolCall.renderer.action.previewing": "Previewing...",
+  "toolCall.renderer.preview.clickToOpen": "Click to open preview",
+  "toolCall.renderer.preview.dialog.fullscreen": "Fullscreen",
+  "toolCall.renderer.preview.dialog.openNewTab": "Open in new tab",
+  "toolCall.renderer.preview.dialog.close": "Close",
+  "toolCall.renderer.preview.noMapping.title": "No public URL mapping found",
+  "toolCall.renderer.preview.noMapping.desc": "Port {port} has no subdomain proxy configured. Create one in Settings > Proxies.",
+  "toolCall.renderer.preview.resolving": "Resolving public URL...",
 } as const
