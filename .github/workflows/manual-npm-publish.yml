@@ -71,6 +71,9 @@ jobs:
       - name: Build server package (includes UI bundling)
         run: npm run build --workspace packages/server
 
+      - name: Run tests
+        run: npm test --workspace packages/server
+
       - name: Set publish metadata
         shell: bash
         run: |
