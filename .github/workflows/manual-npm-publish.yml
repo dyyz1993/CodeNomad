@@ -83,6 +83,9 @@ jobs:
           echo "$TEST_FILES"
           echo "$TEST_FILES" | xargs node --test 2>&1
 
+      - name: Run UI lib tests
+        run: npx tsx --test packages/ui/src/lib/__tests__/*.test.ts 2>&1
+
       - name: Set publish metadata
         shell: bash
         run: |
