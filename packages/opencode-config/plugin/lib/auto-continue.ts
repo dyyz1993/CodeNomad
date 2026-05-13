@@ -4,9 +4,10 @@ import { createCodeNomadRequester } from "./request"
 
 export function createAutoContinueTools(config: CodeNomadConfig) {
   const api = createCodeNomadRequester(config)
+  const baseUrl = (config.baseUrl ?? "").replace(/\/+$/, "")
 
-  const acPath = (sessionId: string, suffix?: string) => {
-    const base = `/api/workspaces/${encodeURIComponent(config.instanceId)}/auto-continue/${encodeURIComponent(sessionId)}`
+  const acUrl = (sessionId: string, suffix?: string) => {
+    const base = `${baseUrl}/api/workspaces/${encodeURIComponent(config.instanceId)}/auto-continue/${encodeURIComponent(sessionId)}`
     return suffix ? `${base}/${suffix}` : base
   }
 
@@ -23,7 +24,7 @@ export function createAutoContinueTools(config: CodeNomadConfig) {
         if (!sessionId) return "Error: no session ID available in context."
 
         try {
-          const data = await api.requestJson<{ cancelled: boolean }>(acPath(sessionId, "cancel"), { method: "POST" })
+          const data = await api.requestJson<{ cancelled: boolean }>(acUrl(sessionId, "cancel"), { method: "POST" })
           return data.cancelled
             ? "Auto-continue countdown cancelled successfully."
             : "No active countdown to cancel (may have already triggered or was not active)."
@@ -45,9 +46,9 @@ export function createAutoContinueTools(config: CodeNomadConfig) {
         if (!sessionId) return "Error: no session ID available in context."
 
         try {
-          await api.requestVoid(acPath(sessionId, "cancel"), { method: "POST" }).catch(() => {})
+          await api.requestVoid(acUrl(sessionId, "cancel"), { method: "POST" }).catch(() => {})
 
-          const data = await api.requestJson<{ enabled: boolean }>(acPath(sessionId), {
+          const data = await api.requestJson<{ enabled: boolean }>(acUrl(sessionId), {
             method: "PUT",
             body: JSON.stringify({ enabled: false }),
           })
@@ -79,7 +80,7 @@ export function createAutoContinueTools(config: CodeNomadConfig) {
             triggerCount: number
             lastTriggerAt: number
             countdownRemaining: number
-          }>(acPath(sessionId))
+          }>(acUrl(sessionId))
 
           const lines = [
             `Enabled: ${data.enabled}`,

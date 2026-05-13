@@ -246,10 +246,9 @@ export function createHttpServer(deps: HttpServerDeps) {
 
     const requiresAuthForApi = pathname.startsWith("/api/") || pathname.startsWith("/workspaces/") || pathname.startsWith("/sidecars/")
     if (requiresAuthForApi && !session) {
-      // Allow OpenCode plugin -> CodeNomad calls with per-instance basic auth.
-      const pluginMatch = pathname.match(/^\/workspaces\/([^/]+)\/plugin(?:\/|$)/)
-      if (pluginMatch) {
-        const workspaceId = pluginMatch[1]
+      const instanceAuthMatch = pathname.match(/^\/(?:workspaces|api\/workspaces)\/([^/]+)(?:\/plugin|\/auto-continue)(?:\/|$)/)
+      if (instanceAuthMatch) {
+        const workspaceId = instanceAuthMatch[1]
         const expected = deps.workspaceManager.getInstanceAuthorizationHeader(workspaceId)
         const provided = Array.isArray(request.headers.authorization)
           ? request.headers.authorization[0]
