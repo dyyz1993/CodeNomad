@@ -1,4 +1,4 @@
-import { createEffect, createSignal, type Accessor } from "solid-js"
+import { createEffect, createSignal, onCleanup, type Accessor } from "solid-js"
 import { addAttachment, getAttachments, removeAttachment } from "../../stores/attachments"
 import { createFileAttachment, createTextAttachment } from "../../types/attachment"
 import type { Attachment } from "../../types/attachment"
@@ -68,37 +68,41 @@ export function usePromptAttachments(options: PromptAttachmentsOptions): PromptA
 
   // Keep placeholder-backed attachments in sync with prompt text.
   // If the placeholder token disappears from the prompt, the attachment should disappear too.
+  // Debounced to avoid O(n) regex loops on every keystroke — only runs 150ms after typing stops.
   createEffect(() => {
     const currentPrompt = options.prompt()
-    const currentAttachments = attachments()
+    const timer = setTimeout(() => {
+      const currentAttachments = attachments()
+      const toRemove: string[] = []
 
-    const toRemove: string[] = []
-
-    for (const attachment of currentAttachments) {
-      if (attachment.source.type === "text") {
-        const match = attachment.display.match(pastedDisplayCounterRegex)
-        if (!match) continue
-        const counter = match[1]
-        if (!createLoosePastedPlaceholderRegex(counter).test(currentPrompt)) {
-          toRemove.push(attachment.id)
+      for (const attachment of currentAttachments) {
+        if (attachment.source.type === "text") {
+          const match = attachment.display.match(pastedDisplayCounterRegex)
+          if (!match) continue
+          const counter = match[1]
+          if (!createLoosePastedPlaceholderRegex(counter).test(currentPrompt)) {
+            toRemove.push(attachment.id)
+          }
+          continue
         }
-        continue
+
+        if (attachment.source.type === "file" && attachment.mediaType.startsWith("image/")) {
+          const match =
+            attachment.display.match(bracketedImageDisplayCounterRegex) || attachment.display.match(imageDisplayCounterRegex)
+          if (!match) continue
+          const counter = match[1]
+          if (!createLooseImagePlaceholderRegex(counter).test(currentPrompt)) {
+            toRemove.push(attachment.id)
+          }
+        }
       }
 
-      if (attachment.source.type === "file" && attachment.mediaType.startsWith("image/")) {
-        const match =
-          attachment.display.match(bracketedImageDisplayCounterRegex) || attachment.display.match(imageDisplayCounterRegex)
-        if (!match) continue
-        const counter = match[1]
-        if (!createLooseImagePlaceholderRegex(counter).test(currentPrompt)) {
-          toRemove.push(attachment.id)
-        }
+      for (const attachmentId of toRemove) {
+        removeAttachment(options.instanceId(), options.sessionId(), attachmentId)
       }
-    }
+    }, 150)
 
-    for (const attachmentId of toRemove) {
-      removeAttachment(options.instanceId(), options.sessionId(), attachmentId)
-    }
+    onCleanup(() => clearTimeout(timer))
   })
 
   function handleRemoveAttachment(attachmentId: string) {

@@ -1,4 +1,4 @@
-import { Suspense, createEffect, createMemo, createSignal, lazy, onMount, type Accessor, type JSXElement } from "solid-js"
+import { Suspense, createEffect, createMemo, createSignal, lazy, onMount, onCleanup, type Accessor, type JSXElement } from "solid-js"
 import type { ToolState } from "@opencode-ai/sdk/v2"
 import useMediaQuery from "@suid/material/useMediaQuery"
 import { AlignJustify, Copy, Split, WrapText } from "lucide-solid"
@@ -14,13 +14,19 @@ const LazyToolCallDiffViewer = lazy(() =>
 )
 
 function CachedDiffMarkup(props: { html: string; onRendered?: () => void }) {
+  let containerRef: HTMLDivElement | undefined
+
   onMount(() => {
     props.onRendered?.()
   })
 
+  onCleanup(() => {
+    if (containerRef) containerRef.innerHTML = ''
+  })
+
   return (
     <div class="tool-call-diff-viewer">
-      <div innerHTML={props.html} />
+      <div ref={containerRef} innerHTML={props.html} />
     </div>
   )
 }

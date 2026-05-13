@@ -619,7 +619,8 @@ async function loadMessages(instanceId: string, sessionId: string, force = false
   const instanceSessions = sessions().get(instanceId)
   const session = instanceSessions?.get(sessionId)
   if (!session) {
-    throw new Error("Session not found")
+    log.warn("Session not found when loading messages", { instanceId, sessionId })
+    return
   }
 
   // Fetch session-level diffs in the background once the session is opened.

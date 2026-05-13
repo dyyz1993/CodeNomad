@@ -16,6 +16,7 @@ type VersionedCacheEntry = {
 
 interface LRUCacheEntry extends VersionedCacheEntry {
   sizeBytes?: number
+  createdAt: number
 }
 
 interface ScopeMetadata {
@@ -32,10 +33,14 @@ const scopeMetaStore = new Map<string, ScopeMetadata>()
 
 let maxEntriesPerScope = 50
 let scopeBudgetBytes = 5 * 1024 * 1024
+let entryTTLMs = 5 * 60 * 1000                // default: 5 minutes
+let lastStaleCheck = 0
+const STALE_CHECK_INTERVAL = 60 * 1000         // check every 60s
 
-export function configureGlobalCache(options?: { maxEntriesPerScope?: number; scopeBudgetBytes?: number }): void {
+export function configureGlobalCache(options?: { maxEntriesPerScope?: number; scopeBudgetBytes?: number; entryTTLMs?: number }): void {
   if (options?.maxEntriesPerScope !== undefined) maxEntriesPerScope = options.maxEntriesPerScope
   if (options?.scopeBudgetBytes !== undefined) scopeBudgetBytes = options.scopeBudgetBytes
+  if (options?.entryTTLMs !== undefined) entryTTLMs = options.entryTTLMs
 }
 
 function resolveKey(value?: string) {
@@ -93,6 +98,30 @@ function evictLRU(valueMap: CacheValueMap, meta: ScopeMetadata): void {
   }
 }
 
+function maybeEvictStale(): void {
+  const now = Date.now()
+  if (now - lastStaleCheck < STALE_CHECK_INTERVAL) return
+  lastStaleCheck = now
+  const cutoff = now - entryTTLMs
+  for (const [instanceKey, sessionMap] of cacheStore) {
+    for (const [sessionKey, scopeMap] of sessionMap) {
+      for (const [scopeKey, valueMap] of scopeMap) {
+        const metaKey = `${instanceKey}::${sessionKey}::${scopeKey}`
+        const meta = scopeMetaStore.get(metaKey)
+        for (const [cacheId, entry] of valueMap) {
+          if (entry.createdAt < cutoff) {
+            if (entry.sizeBytes && meta) meta.totalBytes -= entry.sizeBytes
+            valueMap.delete(cacheId)
+          }
+        }
+        if (meta && valueMap.size === 0) scopeMetaStore.delete(metaKey)
+      }
+      if (scopeMap.size === 0) sessionMap.delete(sessionKey)
+    }
+    if (sessionMap.size === 0) cacheStore.delete(instanceKey)
+  }
+}
+
 function cleanupHierarchy(instanceKey: string, sessionKey: string, scopeKey?: string) {
   const sessionMap = cacheStore.get(instanceKey)
   if (!sessionMap) return
@@ -116,6 +145,7 @@ function cleanupHierarchy(instanceKey: string, sessionKey: string, scopeKey?: st
 }
 
 export function setCacheEntry<T>(params: CacheEntryParams, value: T | undefined, sizeBytes?: number): void {
+  maybeEvictStale()
   const instanceKey = resolveKey(params.instanceId)
   const sessionKey = resolveKey(params.sessionId)
 
@@ -140,16 +170,24 @@ export function setCacheEntry<T>(params: CacheEntryParams, value: T | undefined,
   if (existing?.sizeBytes) meta.totalBytes -= existing.sizeBytes
 
   scopeEntries.delete(params.cacheId)
-  scopeEntries.set(params.cacheId, { version: params.version, value, sizeBytes })
+  scopeEntries.set(params.cacheId, { version: params.version, value, sizeBytes, createdAt: Date.now() })
   if (sizeBytes) meta.totalBytes += sizeBytes
 
   evictLRU(scopeEntries, meta)
 }
 
 export function getCacheEntry<T>(params: CacheEntryParams): T | undefined {
+  maybeEvictStale()
   const scopeEntries = getScopeValueMap(params, false)
   const entry = scopeEntries?.get(params.cacheId)
   if (!entry || entry.version !== params.version) return undefined
+  if (Date.now() - entry.createdAt > entryTTLMs) {
+    scopeEntries!.delete(params.cacheId)
+    const metaKey = scopeMetaKey(params)
+    const meta = scopeMetaStore.get(metaKey)
+    if (meta && entry.sizeBytes) meta.totalBytes -= entry.sizeBytes
+    return undefined
+  }
 
   scopeEntries!.delete(params.cacheId)
   scopeEntries!.set(params.cacheId, entry)

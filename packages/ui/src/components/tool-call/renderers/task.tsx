@@ -6,6 +6,8 @@ import { resolveTitleForTool } from "../tool-title"
 import { messageStoreBus } from "../../../stores/message-v2/bus"
 import { loadMessages } from "../../../stores/session-api"
 import { loading, messagesLoaded } from "../../../stores/session-state"
+import { getLogger } from "../../../lib/logger"
+const log = getLogger("session")
 
 interface TaskSummaryItem {
   id: string
@@ -175,7 +177,9 @@ export const taskRenderer: ToolRenderer = {
       if (childSessionLoaded()) return
       if (childSessionLoading()) return
       setRequestedChildLoad(true)
-      void loadMessages(instanceId, id)
+      void loadMessages(instanceId, id).catch((error) => {
+        log.warn("Failed to load child session messages", { instanceId, id, error })
+      })
     })
 
     const [childToolKeys, setChildToolKeys] = createSignal<string[]>([])

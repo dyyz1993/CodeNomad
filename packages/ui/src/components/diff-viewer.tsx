@@ -1,4 +1,4 @@
-import { createMemo, Show, createEffect } from "solid-js"
+import { createMemo, Show, createEffect, onCleanup } from "solid-js"
 import { DiffView, DiffModeEnum } from "@git-diff-view/solid"
 import "@git-diff-view/solid/styles/diff-view-pure.css"
 import { disableCache } from "@git-diff-view/core"
@@ -243,27 +243,28 @@ export function ToolCallDiffViewer(props: ToolCallDiffViewerProps) {
     return `${props.theme}|${props.mode}|${props.wrap ? "wrap" : "nowrap"}|${props.diffText}`
   })
  
+  let rafId: number | undefined
+
   createEffect(() => {
     const cachedHtml = props.cachedHtml
     if (cachedHtml) {
       if (diffContainerRef) {
         applyCompactDiffLayout(diffContainerRef, props.mode, Boolean(props.wrap))
       }
-      // When we are given cached HTML, we rely on the caller's cache
-      // and simply notify once rendered.
       props.onRendered?.()
       return
     }
- 
+
     const key = contextKey()
     if (!key) return
     if (!diffContainerRef) return
     if (lastCapturedKey === key) return
 
-    requestAnimationFrame(() => {
+    rafId = requestAnimationFrame(() => {
+      rafId = undefined
       if (!diffContainerRef) return
       applyCompactDiffLayout(diffContainerRef, props.mode, Boolean(props.wrap))
-      const markup = diffContainerRef.innerHTML
+      const markup = diffContainerRef.innerHTML.replace(/<svg[\s\S]*?<\/svg>/gi, '')
       if (!markup) return
       lastCapturedKey = key
       if (props.cacheEntryParams) {
@@ -277,6 +278,17 @@ export function ToolCallDiffViewer(props: ToolCallDiffViewerProps) {
       }
       props.onRendered?.()
     })
+
+    onCleanup(() => {
+      if (rafId !== undefined) cancelAnimationFrame(rafId)
+    })
+  })
+
+  createEffect(() => {
+    const cached = props.cachedHtml
+    if (cached && diffContainerRef) {
+      diffContainerRef.innerHTML = ''
+    }
   })
 
 

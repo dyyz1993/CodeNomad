@@ -149,4 +149,27 @@ describe("global-cache", () => {
     assert.equal(getCacheEntry({ scope: "iso2", cacheId: "c", version: "v1" }), 3)
     assert.equal(getCacheEntry({ scope: "iso2", cacheId: "d", version: "v1" }), 4)
   })
+
+  it("TTL: entry returned when within TTL", () => {
+    configureGlobalCache({ entryTTLMs: 60_000 })
+    setCacheEntry({ scope: "ttl", cacheId: "fresh", version: "v1" }, "data")
+    assert.equal(getCacheEntry({ scope: "ttl", cacheId: "fresh", version: "v1" }), "data")
+  })
+
+  it("TTL: entry expired when past TTL", async () => {
+    configureGlobalCache({ entryTTLMs: 1 })
+    setCacheEntry({ scope: "ttl", cacheId: "stale", version: "v1" }, "data")
+    await new Promise((r) => setTimeout(r, 10))
+    assert.equal(getCacheEntry({ scope: "ttl", cacheId: "stale", version: "v1" }), undefined)
+  })
+
+  it("TTL: stale entry is removed from cache after access", async () => {
+    configureGlobalCache({ maxEntriesPerScope: 50, entryTTLMs: 1 })
+    setCacheEntry({ scope: "ttl", cacheId: "gone", version: "v1" }, "data", 100)
+    await new Promise((r) => setTimeout(r, 10))
+    getCacheEntry({ scope: "ttl", cacheId: "gone", version: "v1" })
+    // Entry should be gone now; size should be reclaimed
+    setCacheEntry({ scope: "ttl", cacheId: "new", version: "v1" }, "fresh", 100)
+    assert.equal(getCacheEntry({ scope: "ttl", cacheId: "new", version: "v1" }), "fresh")
+  })
 })

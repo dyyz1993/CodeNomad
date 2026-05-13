@@ -56,6 +56,12 @@ export function usePromptPicker(options: PromptPickerOptions): PromptPickerContr
 
     const cursorPos = target.selectionStart
 
+    // Fast path: if picker not shown and no special characters, skip scanning entirely.
+    if (!showPicker() && !value.includes("/") && !value.includes("@")) {
+      if (atPosition() !== null) setAtPosition(null)
+      return
+    }
+
     // Slash command picker (only when editing the command token: "/<query>")
     if (value.startsWith("/") && cursorPos >= 1) {
       const firstWhitespaceIndex = value.slice(1).search(/\s/)

@@ -211,6 +211,8 @@ function getSessionDraftPrompt(instanceId: string, sessionId: string): string {
 function setSessionDraftPrompt(instanceId: string, sessionId: string, value: string) {
   const key = getDraftKey(instanceId, sessionId)
   setSessionDraftPrompts((prev) => {
+    const existing = prev.get(key) ?? ""
+    if (existing === value) return prev
     const next = new Map(prev)
     if (!value) {
       next.delete(key)

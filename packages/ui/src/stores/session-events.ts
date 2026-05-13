@@ -52,6 +52,8 @@ import { normalizeMessagePart } from "./message-v2/normalizers"
 import { updateSessionInfo } from "./message-v2/session-info"
 import { tGlobal } from "../lib/i18n"
 
+import { createBatchProcessor } from "../lib/batch-updates"
+
 import { loadMessages } from "./session-api"
 import { getOrCreateWorktreeClient, getRootClient, getWorktreeSlugForDirectory, getWorktreeSlugForSession } from "./worktrees"
 import {
@@ -75,6 +77,36 @@ import { handleConversationAssistantPartUpdated } from "./conversation-speech"
 const log = getLogger("sse")
 const pendingSessionFetches = new Map<string, Promise<void>>()
 let activeRetryToast: ToastHandle | null = null
+
+interface PartDeltaItem {
+  instanceId: string
+  messageId: string
+  partId: string
+  field: string
+  delta: string
+}
+
+function flushPartDeltas(items: PartDeltaItem[]) {
+  const merged = new Map<string, PartDeltaItem>()
+  for (const item of items) {
+    const key = `${item.instanceId}:${item.messageId}:${item.partId}:${item.field}`
+    const existing = merged.get(key)
+    if (existing) {
+      existing.delta += item.delta
+    } else {
+      merged.set(key, { ...item })
+    }
+  }
+  for (const item of merged.values()) {
+    try {
+      applyPartDeltaV2(item.instanceId, { messageId: item.messageId, partId: item.partId, field: item.field, delta: item.delta })
+    } catch (error) {
+      log.warn("Failed to apply batched part delta", { instanceId: item.instanceId, messageId: item.messageId, error })
+    }
+  }
+}
+
+const partDeltaBatcher = createBatchProcessor<PartDeltaItem>(flushPartDeltas)
 
 function isSameRetryState(left: SessionRetryState | null | undefined, right: SessionRetryState | null | undefined): boolean {
   const a = left ?? null
@@ -432,7 +464,7 @@ function handleMessagePartDelta(instanceId: string, event: MessagePartDeltaEvent
   if (!props) return
   const { messageID, partID, field, delta } = props
   if (!messageID || !partID || !field || typeof delta !== "string") return
-  applyPartDeltaV2(instanceId, { messageId: messageID, partId: partID, field, delta })
+  partDeltaBatcher.push({ instanceId, messageId: messageID, partId: partID, field, delta })
 }
 
 function handleSessionUpdate(instanceId: string, event: EventSessionUpdated): void {
