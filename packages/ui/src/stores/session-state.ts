@@ -588,11 +588,10 @@ function setActiveSessionFromList(instanceId: string, sessionId: string): void {
   })
 }
 
-function isSessionBusy(instanceId: string, sessionId: string): boolean {
+function isSessionKnown(instanceId: string, sessionId: string): boolean {
   const instanceSessions = sessions().get(instanceId)
   if (!instanceSessions) return false
-  if (!instanceSessions.has(sessionId)) return false
-  return true
+  return instanceSessions.has(sessionId)
 }
 
 function isSessionMessagesLoading(instanceId: string, sessionId: string): boolean {
@@ -779,7 +778,7 @@ export {
   toggleSessionParentExpanded,
   ensureSessionParentExpanded,
   setActiveSessionFromList,
-  isSessionBusy,
+  isSessionKnown,
   isSessionMessagesLoading,
   getSessionInfo,
   isBlankSession,

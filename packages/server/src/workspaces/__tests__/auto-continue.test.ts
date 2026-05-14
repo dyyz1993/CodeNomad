@@ -110,12 +110,12 @@ describe("AutoContinueManager", () => {
     assert.equal(mgr.cancelCountdown("ws1", "s1"), false)
   })
 
-  it("cancelCountdown clears timer and disables for existing session", async () => {
+  it("cancelCountdown clears timer without disabling for existing session", async () => {
     const mgr = await createManager()
     mgr.setConfig("ws1", "s1", { enabled: true, confirmSeconds: 1 })
     mgr.onSessionIdle("ws1", "s1", true)
     assert.equal(mgr.cancelCountdown("ws1", "s1"), true)
-    assert.equal(mgr.getConfig("ws1", "s1").enabled, false)
+    assert.equal(mgr.getConfig("ws1", "s1").enabled, true)
     const state = mgr.getState("ws1", "s1")
     assert.ok(state)
     assert.equal(state.countdownRemaining, 0)

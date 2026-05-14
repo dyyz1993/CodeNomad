@@ -90,7 +90,17 @@ export class AutoContinueManager {
       }
       this.sessions.set(k, state)
     }
+
+    const wasEnabled = state.config.enabled
     Object.assign(state.config, updates)
+
+    if (!state.config.enabled && state.confirmTimer) {
+      clearTimeout(state.confirmTimer)
+      state.confirmTimer = null
+      state.idleCheckCount = 0
+      state.countdownRemaining = 0
+    }
+
     void this.saveState()
     return state.config
   }
@@ -330,7 +340,6 @@ export class AutoContinueManager {
     }
     state.idleCheckCount = 0
     state.countdownRemaining = 0
-    state.config.enabled = false  // 真正关掉，防止 idle 后重新触发
     return true
   }
 

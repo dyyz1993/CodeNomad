@@ -166,7 +166,13 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: RouteDeps) {
       }
       const body = AutoContinueUpdateSchema.parse(request.body ?? {})
       const config = deps.autoContinueManager!.setConfig(request.params.id, request.params.sessionId, body)
-      return config
+      const state = deps.autoContinueManager!.getState(request.params.id, request.params.sessionId)
+      return {
+        ...config,
+        triggerCount: state?.triggerCount ?? 0,
+        lastTriggerAt: state?.lastTriggerAt ?? 0,
+        countdownRemaining: state?.countdownRemaining ?? 0,
+      }
     })
 
     app.post<{

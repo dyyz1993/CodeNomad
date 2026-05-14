@@ -51,6 +51,10 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
   const [draftChecklistPath, setDraftChecklistPath] = createSignal("")
   const [loading, setLoading] = createSignal(false)
   const [initialized, setInitialized] = createSignal(false)
+  const [cancelling, setCancelling] = createSignal(false)
+
+  const [localCountdown, setLocalCountdown] = createSignal(0)
+  const [serverCountdown, setServerCountdown] = createSignal(0)
 
   const sessionStatus = () => {
     const session = sessions().get(props.workspaceId)?.get(props.sessionId)
@@ -64,6 +68,7 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
     try {
       const data = await serverApi.fetchAutoContinue(props.workspaceId, props.sessionId)
       setConfig((prev) => ({ ...prev, ...data }))
+      setServerCountdown(data.countdownRemaining ?? 0)
       if (dialogOpen()) {
         setDraftEnabled(data.enabled)
       }
@@ -106,7 +111,13 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
   })
 
   let prevBusy = true
+  let prevSessionId = props.sessionId
   createEffect(() => {
+    const currentSessionId = props.sessionId
+    if (currentSessionId !== prevSessionId) {
+      prevBusy = true
+      prevSessionId = currentSessionId
+    }
     const busy = sessionBusy()
     if (prevBusy && !busy && sessionStatus() === "idle") {
       void loadConfig()
@@ -114,7 +125,46 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
     prevBusy = busy
   })
 
-  const countdown = () => config().countdownRemaining ?? 0
+  let countdownTimer: ReturnType<typeof setInterval> | undefined
+
+  createEffect(() => {
+    if (countdownTimer !== undefined) {
+      clearInterval(countdownTimer)
+      countdownTimer = undefined
+    }
+
+    const srv = serverCountdown()
+
+    if (!config().enabled || sessionBusy() || srv <= 0) {
+      setLocalCountdown(0)
+      return
+    }
+
+    setLocalCountdown(srv)
+
+    countdownTimer = setInterval(() => {
+      setLocalCountdown((prev) => {
+        if (prev <= 1) {
+          if (countdownTimer !== undefined) {
+            clearInterval(countdownTimer)
+            countdownTimer = undefined
+          }
+          void loadConfig()
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    onCleanup(() => {
+      if (countdownTimer !== undefined) {
+        clearInterval(countdownTimer)
+        countdownTimer = undefined
+      }
+    })
+  })
+
+  const countdown = () => localCountdown()
   const showCountdown = () => config().enabled && countdown() > 0 && !sessionBusy()
 
   const openDialog = () => {
@@ -143,12 +193,32 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
         updates.checklistRelativePath = checklistPath
       }
       const result = await serverApi.updateAutoContinue(props.workspaceId, props.sessionId, updates as any)
-      setConfig((prev) => ({ ...prev, ...result, triggerCount: prev.triggerCount }))
+      setConfig((prev) => ({
+        ...prev,
+        ...result,
+        triggerCount: result.triggerCount ?? prev.triggerCount,
+        countdownRemaining: result.countdownRemaining ?? prev.countdownRemaining,
+      }))
+      setServerCountdown(result.countdownRemaining ?? 0)
       setDialogOpen(false)
     } catch (err) {
       log.error("Failed to save auto-continue config", err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleCancelCountdown = async () => {
+    setCancelling(true)
+    try {
+      await serverApi.cancelAutoContinue(props.workspaceId, props.sessionId)
+      setLocalCountdown(0)
+      setServerCountdown(0)
+      setConfig((prev) => ({ ...prev, countdownRemaining: 0 }))
+    } catch (err) {
+      log.warn("Failed to cancel auto-continue countdown", err)
+    } finally {
+      setCancelling(false)
     }
   }
 
@@ -175,6 +245,22 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
             </span>
           </Show>
         </button>
+
+        <Show when={showCountdown()}>
+          <div class="auto-continue-bar" role="status" aria-live="polite">
+            <span class="auto-continue-bar-countdown">{countdown()}s</span>
+            <span>{t("autoContinueCountdown.message")}</span>
+            <button
+              type="button"
+              class="auto-continue-bar-cancel"
+              onClick={handleCancelCountdown}
+              disabled={cancelling()}
+              aria-label={t("autoContinueCountdown.cancelBtn")}
+            >
+              {t("autoContinueCountdown.cancelBtn")}
+            </button>
+          </div>
+        </Show>
 
         <Dialog open={dialogOpen()} onOpenChange={(v) => setDialogOpen(!!v)} onClose={closeDialog}>
           <Dialog.Portal>

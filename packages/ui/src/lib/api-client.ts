@@ -492,6 +492,9 @@ export const serverApi = {
     maxTriggers: number
     confirmSeconds: number
     checklistRelativePath?: string
+    triggerCount: number
+    lastTriggerAt: number
+    countdownRemaining: number
   }> {
     return request(
       `/api/workspaces/${encodeURIComponent(workspaceId)}/auto-continue/${encodeURIComponent(sessionId)}`,
