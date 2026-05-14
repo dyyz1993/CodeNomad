@@ -128,6 +128,7 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: RouteDeps) {
       cooldownMs: z.number().int().positive().optional(),
       maxTriggers: z.number().int().positive().optional(),
       confirmSeconds: z.number().int().positive().optional(),
+      checklistRelativePath: z.string().optional(),
     })
 
     app.get<{
@@ -141,11 +142,17 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: RouteDeps) {
 
       const config = deps.autoContinueManager!.getConfig(request.params.id, request.params.sessionId)
       const state = deps.autoContinueManager!.getState(request.params.id, request.params.sessionId)
+      const checklistPath = deps.autoContinueManager!.getChecklistPath(
+        request.params.id,
+        request.params.sessionId,
+        workspace.path,
+      )
       return {
         ...config,
         triggerCount: state?.triggerCount ?? 0,
         lastTriggerAt: state?.lastTriggerAt ?? 0,
         countdownRemaining: state?.countdownRemaining ?? 0,
+        checklistPath,
       }
     })
 

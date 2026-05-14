@@ -143,4 +143,7 @@ export const toolCallMessages = {
   "toolCall.renderer.preview.noMapping.title": "No public URL mapping found",
   "toolCall.renderer.preview.noMapping.desc": "Port {port} has no subdomain proxy configured. Create one in Settings > Proxies.",
   "toolCall.renderer.preview.resolving": "Resolving public URL...",
+  "toolCall.renderer.preview.localAddress.title": "Cannot preview local address",
+  "toolCall.renderer.preview.localAddress.portDesc": "Port {port} has no public mapping. Configure a subdomain proxy in Settings.",
+  "toolCall.renderer.preview.localAddress.desc": "Local address {address} cannot be previewed in the browser. Configure a public mapping.",
 } as const

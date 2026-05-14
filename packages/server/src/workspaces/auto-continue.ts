@@ -12,6 +12,7 @@ interface AutoContinueConfig {
   cooldownMs: number
   maxTriggers: number
   confirmSeconds: number
+  checklistRelativePath?: string  // Checklist path relative to workspace root
 }
 
 interface SessionAutoContinueState {
@@ -30,6 +31,7 @@ const DEFAULT_CONFIG: AutoContinueConfig = {
   cooldownMs: 60_000,
   maxTriggers: 20,
   confirmSeconds: 5,
+  checklistRelativePath: ".codenomad/{sessionId}-auto-continue-checklist.md",  // Default: per-session checklist
 }
 
 export class AutoContinueManager {
@@ -64,6 +66,14 @@ export class AutoContinueManager {
 
   getConfig(workspaceId: string, sessionId: string): AutoContinueConfig {
     return this.sessions.get(this.key(workspaceId, sessionId))?.config ?? { ...DEFAULT_CONFIG }
+  }
+
+  getChecklistPath(workspaceId: string, sessionId: string, workspaceRoot: string): string {
+    const config = this.sessions.get(this.key(workspaceId, sessionId))?.config ?? DEFAULT_CONFIG
+    const relativePath = config.checklistRelativePath ?? DEFAULT_CONFIG.checklistRelativePath
+    // Supports {sessionId} template variable
+    const resolved = relativePath.replace(/\{sessionId\}/g, sessionId)
+    return path.resolve(workspaceRoot, resolved)
   }
 
   setConfig(workspaceId: string, sessionId: string, updates: Partial<AutoContinueConfig>): AutoContinueConfig {
@@ -202,6 +212,21 @@ export class AutoContinueManager {
   ): void {
     const requiredChecks = state.config.confirmSeconds
     state.countdownRemaining = requiredChecks
+
+    // 🐛 FIX: If cooldown hasn't expired, don't restart confirmation
+    // Prevents repeated countdown restarts when onSessionIdle is called during cooldown period
+    if (state.lastTriggerAt > 0) {
+      const elapsed = Date.now() - state.lastTriggerAt
+      if (elapsed < state.config.cooldownMs) {
+        this.logger.debug({
+          workspaceId,
+          sessionId,
+          elapsed,
+          cooldownMs: state.config.cooldownMs,
+        }, "AutoContinue: cooldown period not expired, skip restarting confirmation")
+        return
+      }
+    }
 
     const check = () => {
       state.idleCheckCount++

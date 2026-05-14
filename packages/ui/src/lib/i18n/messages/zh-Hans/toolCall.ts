@@ -143,4 +143,7 @@ export const toolCallMessages = {
   "toolCall.renderer.preview.noMapping.title": "未找到公网地址映射",
   "toolCall.renderer.preview.noMapping.desc": "端口 {port} 尚未配置子域名代理。请在 设置 > 代理 中创建。",
   "toolCall.renderer.preview.resolving": "正在解析公网地址...",
+  "toolCall.renderer.preview.localAddress.title": "无法预览本地地址",
+  "toolCall.renderer.preview.localAddress.portDesc": "端口 {port} 没有公网映射，请在设置中配置子域名代理",
+  "toolCall.renderer.preview.localAddress.desc": "本地地址 {address} 无法在浏览器中预览，请配置公网映射",
 } as const

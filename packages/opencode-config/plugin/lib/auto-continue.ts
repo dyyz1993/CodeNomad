@@ -1,16 +1,7 @@
 import fs from "fs"
-import path from "path"
 import { tool } from "@opencode-ai/plugin/tool"
 import type { CodeNomadConfig } from "./request"
 import { createCodeNomadRequester } from "./request"
-
-const CHECKLIST_RELATIVE_PATH = ".codenomad/auto-continue-checklist.md"
-
-function getWorkspaceRoot(): string {
-  const rootDir = process.env.CODENOMAD_ROOT_DIR
-  if (rootDir) return rootDir
-  return process.cwd()
-}
 
 interface ChecklistResult {
   ok: boolean
@@ -21,9 +12,19 @@ interface ChecklistResult {
   unchecked: string[]
 }
 
-function verifyChecklist(): ChecklistResult {
-  const root = getWorkspaceRoot()
-  const filePath = path.join(root, CHECKLIST_RELATIVE_PATH)
+interface AutoContinueResponse {
+  enabled: boolean
+  prompt: string
+  cooldownMs: number
+  maxTriggers: number
+  confirmSeconds: number
+  triggerCount: number
+  lastTriggerAt: number
+  countdownRemaining: number
+  checklistPath?: string
+}
+
+function verifyChecklistFile(filePath: string): ChecklistResult {
   const exists = fs.existsSync(filePath)
 
   if (!exists) {
@@ -58,6 +59,39 @@ function verifyChecklist(): ChecklistResult {
   }
 }
 
+function buildRejectionMessage(checklist: ChecklistResult): string {
+  const msg = [
+    "AUTO-CONTINUE GUARD: Cannot cancel/pause — checklist has unchecked items.",
+    "You must complete ALL items before auto-continue can be stopped.",
+    "Continue working on the remaining tasks. Do NOT call cancel/pause again until all items are checked.",
+    "",
+  ]
+  if (!checklist.exists) {
+    msg.push(
+      `Checklist file not found: ${checklist.filePath}`,
+      `The checklist path is configured per-session. Default: {workspace}/.codenomad/{sessionId}-auto-continue-checklist.md`,
+      "You can customize the path in the auto-continue config (checklistRelativePath).",
+      "",
+      "Create this file with checkboxes like:",
+      "  - [ ] Task description",
+      "  - [ ] Another task",
+      "",
+      "Check off items as you complete them with `- [x] Done task`.",
+    )
+  } else {
+    msg.push(
+      `File: ${checklist.filePath}`,
+      `Progress: ${checklist.checked}/${checklist.total} completed`,
+      "",
+      "Unchecked items:",
+      ...checklist.unchecked.map((item) => `  - [ ] ${item}`),
+      "",
+      "Complete all items and check them off before calling cancel/pause.",
+    )
+  }
+  return msg.join("\n")
+}
+
 export function createAutoContinueTools(config: CodeNomadConfig) {
   const api = createCodeNomadRequester(config)
   const baseUrl = (config.baseUrl ?? "").replace(/\/+$/, "")
@@ -67,46 +101,40 @@ export function createAutoContinueTools(config: CodeNomadConfig) {
     return suffix ? `${base}/${suffix}` : base
   }
 
-  const GUARD_MESSAGE = [
-    "AUTO-CONTINUE GUARD: Cannot cancel/pause — checklist has unchecked items.",
-    "You must complete ALL items before auto-continue can be stopped.",
-    "Continue working on the remaining tasks. Do NOT call cancel/pause again until all items are checked.",
-  ].join("\n")
+  async function fetchChecklistPath(sessionId: string): Promise<string | null> {
+    try {
+      const data = await api.requestJson<AutoContinueResponse>(acUrl(sessionId))
+      return data.checklistPath ?? null
+    } catch {
+      return null
+    }
+  }
 
   return {
     auto_continue_cancel: tool({
       description: [
         "Cancel the auto-continue countdown timer for the current session.",
         "",
-        "GUARD: Before this tool can execute, it reads `.codenomad/auto-continue-checklist.md` in the workspace.",
-        "If ANY checkbox is unchecked (`- [ ]`), the cancel is REJECTED and you must continue working.",
+        "GUARD: Before this tool can execute, it reads the session's checklist file.",
+        "The checklist path is configured per-session via the auto-continue settings.",
+        "Default: {workspace}/.codenomad/{sessionId}-auto-continue-checklist.md",
+        "If ANY checkbox is unchecked (`- [ ]`), the cancel is REJECTED.",
         "Only when ALL items are checked (`- [x]`) will the cancel proceed.",
-        "Do NOT call this tool on your own initiative — only when the USER explicitly asks to stop.",
+        "Do NOT call this tool on your own initiative — only when the USER explicitly asks.",
       ].join("\n"),
       args: {},
       async execute(_args, ctx) {
         const sessionId = ctx.sessionID
         if (!sessionId) return "Error: no session ID available in context."
 
-        const checklist = verifyChecklist()
+        const checklistPath = await fetchChecklistPath(sessionId)
+        if (!checklistPath) {
+          return "Error: cannot determine checklist path. Is auto-continue configured?"
+        }
+
+        const checklist = verifyChecklistFile(checklistPath)
         if (!checklist.ok) {
-          if (!checklist.exists) {
-            return [
-              GUARD_MESSAGE,
-              "",
-              `Checklist file not found: ${checklist.filePath}`,
-              "Create it with checkboxes like `- [ ] Task description` and check them off as you complete tasks.",
-            ].join("\n")
-          }
-          return [
-            GUARD_MESSAGE,
-            "",
-            `File: ${checklist.filePath}`,
-            `Progress: ${checklist.checked}/${checklist.total} completed`,
-            "",
-            "Unchecked items:",
-            ...checklist.unchecked.map((item) => `  - [ ] ${item}`),
-          ].join("\n")
+          return buildRejectionMessage(checklist)
         }
 
         try {
@@ -124,8 +152,10 @@ export function createAutoContinueTools(config: CodeNomadConfig) {
       description: [
         "Pause auto-continue for the current session. The countdown will stop and auto-continue will not trigger.",
         "",
-        "GUARD: Before this tool can execute, it reads `.codenomad/auto-continue-checklist.md` in the workspace.",
-        "If ANY checkbox is unchecked (`- [ ]`), the pause is REJECTED and you must continue working.",
+        "GUARD: Before this tool can execute, it reads the session's checklist file.",
+        "The checklist path is configured per-session via the auto-continue settings.",
+        "Default: {workspace}/.codenomad/{sessionId}-auto-continue-checklist.md",
+        "If ANY checkbox is unchecked (`- [ ]`), the pause is REJECTED.",
         "Only when ALL items are checked (`- [x]`) will the pause proceed.",
         "Only call this when the USER explicitly asks to pause.",
       ].join("\n"),
@@ -134,25 +164,14 @@ export function createAutoContinueTools(config: CodeNomadConfig) {
         const sessionId = ctx.sessionID
         if (!sessionId) return "Error: no session ID available in context."
 
-        const checklist = verifyChecklist()
+        const checklistPath = await fetchChecklistPath(sessionId)
+        if (!checklistPath) {
+          return "Error: cannot determine checklist path. Is auto-continue configured?"
+        }
+
+        const checklist = verifyChecklistFile(checklistPath)
         if (!checklist.ok) {
-          if (!checklist.exists) {
-            return [
-              GUARD_MESSAGE,
-              "",
-              `Checklist file not found: ${checklist.filePath}`,
-              "Create it with checkboxes like `- [ ] Task description` and check them off as you complete tasks.",
-            ].join("\n")
-          }
-          return [
-            GUARD_MESSAGE,
-            "",
-            `File: ${checklist.filePath}`,
-            `Progress: ${checklist.checked}/${checklist.total} completed`,
-            "",
-            "Unchecked items:",
-            ...checklist.unchecked.map((item) => `  - [ ] ${item}`),
-          ].join("\n")
+          return buildRejectionMessage(checklist)
         }
 
         try {
@@ -181,18 +200,12 @@ export function createAutoContinueTools(config: CodeNomadConfig) {
         if (!sessionId) return "Error: no session ID available in context."
 
         try {
-          const data = await api.requestJson<{
-            enabled: boolean
-            prompt: string
-            cooldownMs: number
-            maxTriggers: number
-            confirmSeconds: number
-            triggerCount: number
-            lastTriggerAt: number
-            countdownRemaining: number
-          }>(acUrl(sessionId))
+          const data = await api.requestJson<AutoContinueResponse>(acUrl(sessionId))
 
-          const checklist = verifyChecklist()
+          let checklist: ChecklistResult | null = null
+          if (data.checklistPath) {
+            checklist = verifyChecklistFile(data.checklistPath)
+          }
 
           const lines = [
             `Enabled: ${data.enabled}`,
@@ -201,15 +214,26 @@ export function createAutoContinueTools(config: CodeNomadConfig) {
             `Triggers: ${data.triggerCount}/${data.maxTriggers}`,
             `Cooldown: ${data.cooldownMs / 1000}s`,
             `Last triggered: ${data.lastTriggerAt ? new Date(data.lastTriggerAt).toISOString() : "never"}`,
-            "",
-            `Checklist (${checklist.exists ? `${checklist.checked}/${checklist.total}` : "not found"}): ${checklist.ok ? "ALL DONE" : "INCOMPLETE"}`,
           ]
 
-          if (checklist.exists && checklist.unchecked.length > 0) {
-            lines.push("Remaining:")
-            for (const item of checklist.unchecked) {
-              lines.push(`  - [ ] ${item}`)
+          if (checklist) {
+            const status = checklist.ok ? "ALL DONE ✅" : "INCOMPLETE ⚠️"
+            lines.push(
+              "",
+              `Checklist (${checklist.checked}/${checklist.total}): ${status}`,
+              `Path: ${checklist.filePath}`,
+            )
+            if (checklist.unchecked.length > 0) {
+              lines.push("Remaining:")
+              for (const item of checklist.unchecked) {
+                lines.push(`  - [ ] ${item}`)
+              }
             }
+          } else {
+            lines.push(
+              "",
+              "No checklist path configured. Use the default: {workspace}/.codenomad/{sessionId}-auto-continue-checklist.md",
+            )
           }
 
           return lines.join("\n")
