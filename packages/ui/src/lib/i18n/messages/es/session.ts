@@ -94,4 +94,6 @@ export const sessionMessages = {
   "sessionState.cleanup.deepConfirm.cancelLabel": "Cancelar",
   "sessionState.cleanup.toast.one": "Se limpió {count} sesión vacía",
   "sessionState.cleanup.toast.other": "Se limpiaron {count} sesiones vacías",
+
+  "autoContinue.guarding": "En guardia",
 } as const

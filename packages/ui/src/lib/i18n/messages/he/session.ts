@@ -94,4 +94,6 @@ export const sessionMessages = {
   "sessionState.cleanup.deepConfirm.cancelLabel": "ביטול",
   "sessionState.cleanup.toast.one": "נוקה {count} סשן ריק",
   "sessionState.cleanup.toast.other": "נוקו {count} סשנים ריקים",
+
+  "autoContinue.guarding": "בשמירה",
 } as const

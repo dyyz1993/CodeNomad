@@ -151,6 +151,7 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
           <Timer class="w-3.5 h-3.5" />
           <Show when={config().enabled && !showCountdown()}>
             <span class="auto-continue-dot" />
+            <span class="auto-continue-guarding">{t("autoContinue.guarding")}</span>
           </Show>
           <Show when={showCountdown()}>
             <span class="auto-continue-countdown-badge">{countdown()}s</span>

@@ -94,4 +94,6 @@ export const sessionMessages = {
   "sessionState.cleanup.deepConfirm.cancelLabel": "Отмена",
   "sessionState.cleanup.toast.one": "Удалена {count} пустая сессия",
   "sessionState.cleanup.toast.other": "Удалено {count} пустых сессий",
+
+  "autoContinue.guarding": "Охрана",
 } as const

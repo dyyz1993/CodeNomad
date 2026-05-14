@@ -29,6 +29,7 @@
     "google-auth-library": "^10.5.0"
   },
   "devDependencies": {
-    "baseline-browser-mapping": "^2.9.11"
+    "baseline-browser-mapping": "^2.9.11",
+    "rollup": "^4.60.3"
   }
 }

@@ -117,6 +117,7 @@ export const sessionMessages = {
   "autoContinue.save": "保存",
   "autoContinue.saving": "保存中...",
   "autoContinue.cancel": "取消",
+  "autoContinue.guarding": "守护中",
 
   "autoContinueCountdown.message": "后自动继续",
   "autoContinueCountdown.cancelBtn": "取消",

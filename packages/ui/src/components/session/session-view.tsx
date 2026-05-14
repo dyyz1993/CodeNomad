@@ -179,11 +179,19 @@ export const SessionView: Component<SessionViewProps> = (props) => {
  
   async function handleSendMessage(prompt: string, attachments: Attachment[]) {
     scheduleScrollToBottom()
-    await sendMessage(props.instanceId, props.sessionId, prompt, attachments)
+    try {
+      await sendMessage(props.instanceId, props.sessionId, prompt, attachments)
+    } catch (error) {
+      log.error("Failed to send message", error)
+    }
   }
 
   async function handleRunShell(command: string) {
-    await runShellCommand(props.instanceId, props.sessionId, command)
+    try {
+      await runShellCommand(props.instanceId, props.sessionId, command)
+    } catch (error) {
+      log.error("Failed to run shell command", error)
+    }
   }
  
   async function handleAbortSession() {

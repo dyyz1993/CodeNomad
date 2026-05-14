@@ -94,4 +94,6 @@ export const sessionMessages = {
   "sessionState.cleanup.deepConfirm.cancelLabel": "キャンセル",
   "sessionState.cleanup.toast.one": "{count} 件の空セッションを整理しました",
   "sessionState.cleanup.toast.other": "{count} 件の空セッションを整理しました",
+
+  "autoContinue.guarding": "ガード中",
 } as const

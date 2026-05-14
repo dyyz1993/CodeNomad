@@ -91,7 +91,8 @@ async function sendMessage(
   const instanceSessions = sessions().get(instanceId)
   const session = instanceSessions?.get(sessionId)
   if (!session) {
-    throw new Error("Session not found")
+    log.warn("Session not found", { instanceId, sessionId })
+    return
   }
 
   const messageId = createId("msg")
@@ -238,7 +239,8 @@ async function executeCustomCommand(
 
   const session = sessions().get(instanceId)?.get(sessionId)
   if (!session) {
-    throw new Error("Session not found")
+    log.warn("Session not found", { instanceId, sessionId })
+    return
   }
 
   const body: {
@@ -284,7 +286,8 @@ async function runShellCommand(instanceId: string, sessionId: string, command: s
 
   const session = sessions().get(instanceId)?.get(sessionId)
   if (!session) {
-    throw new Error("Session not found")
+    log.warn("Session not found", { instanceId, sessionId })
+    return
   }
 
   const agent = session.agent || "build"
@@ -329,7 +332,8 @@ async function updateSessionAgent(instanceId: string, sessionId: string, agent: 
   const instanceSessions = sessions().get(instanceId)
   const session = instanceSessions?.get(sessionId)
   if (!session) {
-    throw new Error("Session not found")
+    log.warn("Session not found", { instanceId, sessionId })
+    return
   }
 
   const nextModel = await getDefaultModel(instanceId, agent)
@@ -359,7 +363,8 @@ async function updateSessionModel(
   const instanceSessions = sessions().get(instanceId)
   const session = instanceSessions?.get(sessionId)
   if (!session) {
-    throw new Error("Session not found")
+    log.warn("Session not found", { instanceId, sessionId })
+    return
   }
 
   if (!isModelValid(instanceId, model)) {
@@ -390,7 +395,8 @@ async function renameSession(instanceId: string, sessionId: string, nextTitle: s
 
   const session = sessions().get(instanceId)?.get(sessionId)
   if (!session) {
-    throw new Error("Session not found")
+    log.warn("Session not found", { instanceId, sessionId })
+    return
   }
 
   const trimmedTitle = nextTitle.trim()
