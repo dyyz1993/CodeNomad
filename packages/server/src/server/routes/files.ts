@@ -37,6 +37,13 @@ function getMimeType(filePath: string): string {
   return MIME_TYPES[ext] ?? "application/octet-stream"
 }
 
+const ALLOWED_EXTERNAL_ROOTS = ["/tmp", "/private/tmp"]
+
+function isAllowedPath(absolutePath: string, workspacePath: string): boolean {
+  if (isSubpath(absolutePath, workspacePath)) return true
+  return ALLOWED_EXTERNAL_ROOTS.some((root) => isSubpath(absolutePath, root))
+}
+
 function isSubpath(candidate: string, root: string): boolean {
   const rel = path.relative(root, candidate)
   if (rel === "" || rel === ".") return true
@@ -124,7 +131,7 @@ export function registerFilePreviewRoutes(app: FastifyInstance, deps: { workspac
     }
 
     const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(workspace.path, filePath)
-    if (!isSubpath(absolutePath, workspace.path)) {
+    if (!isAllowedPath(absolutePath, workspace.path)) {
       reply.code(403).send({ error: "Path outside workspace" })
       return
     }
