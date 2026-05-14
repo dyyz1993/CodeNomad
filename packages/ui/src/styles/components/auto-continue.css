@@ -43,6 +43,22 @@
   color: var(--status-success, #22c55e);
   letter-spacing: 0.02em;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.auto-continue-guarding-countdown {
+  font-size: 0.625rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--status-success, #22c55e);
+  margin-left: 0.125rem;
+  animation: auto-continue-pulse 1s ease-in-out infinite;
+}
+
+.auto-continue-dot-countdown {
+  animation: auto-continue-dot-pulse 1s ease-in-out infinite;
 }
 
 .auto-continue-countdown-badge {

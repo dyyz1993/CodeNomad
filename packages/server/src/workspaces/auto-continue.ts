@@ -211,13 +211,13 @@ export class AutoContinueManager {
     state: SessionAutoContinueState,
   ): void {
     const requiredChecks = state.config.confirmSeconds
-    state.countdownRemaining = requiredChecks
 
-    // 🐛 FIX: If cooldown hasn't expired, don't restart confirmation
+    // If cooldown hasn't expired, don't restart confirmation
     // Prevents repeated countdown restarts when onSessionIdle is called during cooldown period
     if (state.lastTriggerAt > 0) {
       const elapsed = Date.now() - state.lastTriggerAt
       if (elapsed < state.config.cooldownMs) {
+        state.countdownRemaining = 0
         this.logger.debug({
           workspaceId,
           sessionId,
@@ -227,6 +227,8 @@ export class AutoContinueManager {
         return
       }
     }
+
+    state.countdownRemaining = requiredChecks
 
     const check = () => {
       state.idleCheckCount++

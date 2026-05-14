@@ -153,8 +153,12 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
             <span class="auto-continue-dot" />
             <span class="auto-continue-guarding">{t("autoContinue.guarding")}</span>
           </Show>
-          <Show when={showCountdown()}>
-            <span class="auto-continue-countdown-badge">{countdown()}s</span>
+          <Show when={config().enabled && showCountdown()}>
+            <span class="auto-continue-dot auto-continue-dot-countdown" />
+            <span class="auto-continue-guarding">
+              {t("autoContinue.guarding")}
+              <span class="auto-continue-guarding-countdown">{countdown()}s</span>
+            </span>
           </Show>
         </button>
 
