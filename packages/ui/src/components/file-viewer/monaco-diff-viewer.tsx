@@ -70,13 +70,9 @@ export function MonacoDiffViewer(props: MonacoDiffViewerProps) {
         wordWrap: props.wordWrap === "on" ? "on" : "off",
         glyphMargin: false,
         folding: false,
-        // Keep enough gutter space so unified diffs don't overlap `+`/`-` markers.
         lineNumbersMinChars: 4,
         lineDecorationsWidth: 12,
-        // Use legacy diff algorithm for better performance with large files
-        // See: https://github.com/microsoft/vscode/issues/184037
         diffAlgorithm: "legacy",
-        // Limit computation time to avoid freezing on large files
         maxComputationTime: 10000,
       })
 
@@ -124,23 +120,46 @@ export function MonacoDiffViewer(props: MonacoDiffViewerProps) {
     }
   })
 
+  let lastAppliedBefore = ""
+  let lastAppliedAfter = ""
+  let rafId: number | undefined
+
   createEffect(() => {
     if (!ready() || !monaco || !diffEditor) return
-    const languageId = inferMonacoLanguageId(monaco, props.path)
     const { before, after } = resolvedContent()
-    const beforeKey = `${props.scopeKey}:diff:${props.path}:before`
-    const afterKey = `${props.scopeKey}:diff:${props.path}:after`
 
-    const original = getOrCreateTextModel({ monaco, cacheKey: beforeKey, value: before, languageId })
-    const modified = getOrCreateTextModel({ monaco, cacheKey: afterKey, value: after, languageId })
-    diffEditor.setModel({ original, modified })
+    if (before === lastAppliedBefore && after === lastAppliedAfter) return
 
-    void ensureMonacoLanguageLoaded(languageId).then(() => {
-      try {
-        monaco.editor.setModelLanguage(original, languageId)
-        monaco.editor.setModelLanguage(modified, languageId)
-      } catch {
-        // ignore
+    if (rafId !== undefined) return
+    rafId = requestAnimationFrame(() => {
+      rafId = undefined
+      if (!monaco || !diffEditor) return
+
+      const languageId = inferMonacoLanguageId(monaco, props.path)
+      const beforeKey = `${props.scopeKey}:diff:${props.path}:before`
+      const afterKey = `${props.scopeKey}:diff:${props.path}:after`
+
+      const original = getOrCreateTextModel({ monaco, cacheKey: beforeKey, value: before, languageId })
+      const modified = getOrCreateTextModel({ monaco, cacheKey: afterKey, value: after, languageId })
+      diffEditor.setModel({ original, modified })
+
+      lastAppliedBefore = before
+      lastAppliedAfter = after
+
+      void ensureMonacoLanguageLoaded(languageId).then(() => {
+        try {
+          monaco.editor.setModelLanguage(original, languageId)
+          monaco.editor.setModelLanguage(modified, languageId)
+        } catch {
+          // ignore
+        }
+      })
+    })
+
+    onCleanup(() => {
+      if (rafId !== undefined) {
+        cancelAnimationFrame(rafId)
+        rafId = undefined
       }
     })
   })

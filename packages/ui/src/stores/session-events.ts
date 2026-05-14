@@ -550,6 +550,20 @@ function handleSessionUpdate(instanceId: string, event: EventSessionUpdated): vo
   }
 }
 
+let diffRafId: number | undefined
+const pendingDiffs = new Map<string, { instanceId: string; sessionId: string; diffs: unknown[] }>()
+
+function flushPendingDiffs(): void {
+  const items = Array.from(pendingDiffs.values())
+  pendingDiffs.clear()
+  diffRafId = undefined
+  for (const { instanceId, sessionId, diffs } of items) {
+    withSession(instanceId, sessionId, (session) => {
+      session.diff = diffs as any[]
+    })
+  }
+}
+
 function handleSessionDiff(instanceId: string, event: EventSessionDiff): void {
   const sessionId = event.properties?.sessionID
   if (!sessionId) return
@@ -558,21 +572,21 @@ function handleSessionDiff(instanceId: string, event: EventSessionDiff): void {
   if (!Array.isArray(diffs)) return
 
   const existing = sessions().get(instanceId)?.get(sessionId)
-  if (existing) {
-    withSession(instanceId, sessionId, (session) => {
-      session.diff = diffs
-    })
+  if (!existing) {
+    void (async () => {
+      await fetchSessionInfo(instanceId, sessionId, (event as any)?.directory)
+      withSession(instanceId, sessionId, (session) => {
+        session.diff = diffs
+      })
+    })().catch((error) => log.warn("Failed to hydrate session for diff event", { instanceId, sessionId, error }))
     return
   }
 
-  // A diff event can arrive before we have hydrated the session list.
-  // Best-effort: fetch the session record so the diff has somewhere to live.
-  void (async () => {
-    await fetchSessionInfo(instanceId, sessionId, (event as any)?.directory)
-    withSession(instanceId, sessionId, (session) => {
-      session.diff = diffs
-    })
-  })().catch((error) => log.warn("Failed to hydrate session for diff event", { instanceId, sessionId, error }))
+  const key = `${instanceId}:${sessionId}`
+  pendingDiffs.set(key, { instanceId, sessionId, diffs })
+  if (diffRafId === undefined) {
+    diffRafId = requestAnimationFrame(flushPendingDiffs)
+  }
 }
 
 function handleSessionIdle(instanceId: string, event: EventSessionIdle): void {
