@@ -8,6 +8,20 @@ release/
 out/
 .dir-locals.el
 .opencode/bashOutputs/
+.opencode/idle-auto-continue/
+.opencode/preview-report/
+.opencode/preview-screenshots/
+
+# UI test artifacts
+.ui-tester/
+TEST_REPORT.html
+TEST_REPORT.md
+
+# npm auth (contains secrets)
+.npmrc
+
+# Electron bundled node binary (>100MB)
+packages/electron-app/electron/resources/node/
 
 # Local runtime artifacts
 .codenomad/
