@@ -118,6 +118,10 @@ export const sessionMessages = {
   "autoContinue.saving": "保存中...",
   "autoContinue.cancel": "取消",
   "autoContinue.guarding": "守护中",
+  "autoContinue.checklistPath": "Checklist 路径",
+  "autoContinue.checklistPathPlaceholder": ".codenomad/{sessionId}-auto-continue-checklist.md",
+  "autoContinue.confirmSeconds": "倒计时",
+  "autoContinue.customOption": "自定义...",
 
   "autoContinueCountdown.message": "后自动继续",
   "autoContinueCountdown.cancelBtn": "取消",

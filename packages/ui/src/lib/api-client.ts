@@ -464,6 +464,7 @@ export const serverApi = {
     cooldownMs: number
     maxTriggers: number
     confirmSeconds: number
+    checklistRelativePath?: string
     triggerCount: number
     lastTriggerAt: number
     countdownRemaining: number
@@ -482,6 +483,7 @@ export const serverApi = {
       cooldownMs?: number
       maxTriggers?: number
       confirmSeconds?: number
+      checklistRelativePath?: string
     },
   ): Promise<{
     enabled: boolean
@@ -489,6 +491,7 @@ export const serverApi = {
     cooldownMs: number
     maxTriggers: number
     confirmSeconds: number
+    checklistRelativePath?: string
   }> {
     return request(
       `/api/workspaces/${encodeURIComponent(workspaceId)}/auto-continue/${encodeURIComponent(sessionId)}`,

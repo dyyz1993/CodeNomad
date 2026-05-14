@@ -118,6 +118,10 @@ export const sessionMessages = {
   "autoContinue.saving": "Saving...",
   "autoContinue.cancel": "Cancel",
   "autoContinue.guarding": "Guarding",
+  "autoContinue.checklistPath": "Checklist Path",
+  "autoContinue.checklistPathPlaceholder": ".codenomad/{sessionId}-auto-continue-checklist.md",
+  "autoContinue.confirmSeconds": "Countdown",
+  "autoContinue.customOption": "Custom...",
 
   "autoContinueCountdown.message": "until auto-continue",
   "autoContinueCountdown.cancelBtn": "Cancel",

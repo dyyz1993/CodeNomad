@@ -238,4 +238,38 @@
   background: var(--surface-tertiary, rgba(0, 0, 0, 0.15));
 }
 
+.auto-continue-select {
+  font-size: 0.8125rem;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  border-radius: 0.25rem;
+  background: var(--surface-primary, rgba(0, 0, 0, 0.2));
+  color: var(--text-primary, rgba(255, 255, 255, 0.9));
+  font-family: inherit;
+  cursor: pointer;
+  min-width: 5rem;
+}
+
+.auto-continue-select:focus {
+  outline: none;
+  border-color: var(--accent, #6366f1);
+}
+
+.auto-continue-custom-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.auto-continue-checklist-path {
+  width: 100%;
+  font-size: 0.75rem;
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  border-radius: 0.25rem;
+  background: var(--surface-primary, rgba(0, 0, 0, 0.2));
+  color: var(--text-muted, rgba(255, 255, 255, 0.5));
+}
+
 @import "./auto-continue-indicator.css";

@@ -1,5 +1,5 @@
 import { Dialog } from "@kobalte/core/dialog"
-import { createSignal, createEffect, Show, onCleanup, type Component } from "solid-js"
+import { createSignal, createEffect, Show, For, onCleanup, type Component } from "solid-js"
 import { RefreshCw, Timer } from "lucide-solid"
 import { serverApi } from "../lib/api-client"
 import { useI18n } from "../lib/i18n"
@@ -9,6 +9,10 @@ import { sessions } from "../stores/session-state"
 
 const log = getLogger("session")
 
+const MAX_TRIGGER_PRESETS = [10, 20, 50, 99] as const
+const COOLDOWN_PRESETS = [30, 60, 120, 300, 600] as const
+const CONFIRM_PRESETS = [5, 10, 15, 30] as const
+
 interface AutoContinueConfig {
   enabled: boolean
   prompt: string
@@ -17,6 +21,7 @@ interface AutoContinueConfig {
   confirmSeconds: number
   triggerCount: number
   countdownRemaining: number
+  checklistRelativePath?: string
 }
 
 interface AutoContinueControlsProps {
@@ -42,6 +47,8 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
   const [draftPrompt, setDraftPrompt] = createSignal("")
   const [draftMaxTriggers, setDraftMaxTriggers] = createSignal(20)
   const [draftCooldownSec, setDraftCooldownSec] = createSignal(60)
+  const [draftConfirmSec, setDraftConfirmSec] = createSignal(5)
+  const [draftChecklistPath, setDraftChecklistPath] = createSignal("")
   const [loading, setLoading] = createSignal(false)
   const [initialized, setInitialized] = createSignal(false)
 
@@ -116,19 +123,26 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
     setDraftPrompt(c.prompt)
     setDraftMaxTriggers(c.maxTriggers)
     setDraftCooldownSec(Math.round(c.cooldownMs / 1000))
+    setDraftConfirmSec(c.confirmSeconds)
+    setDraftChecklistPath(c.checklistRelativePath ?? "")
     setDialogOpen(true)
   }
 
   const saveConfig = async () => {
     setLoading(true)
     try {
-      const updates = {
+      const updates: Record<string, unknown> = {
         enabled: draftEnabled(),
         prompt: draftPrompt(),
         maxTriggers: draftMaxTriggers(),
         cooldownMs: draftCooldownSec() * 1000,
+        confirmSeconds: draftConfirmSec(),
       }
-      const result = await serverApi.updateAutoContinue(props.workspaceId, props.sessionId, updates)
+      const checklistPath = draftChecklistPath()
+      if (checklistPath) {
+        updates.checklistRelativePath = checklistPath
+      }
+      const result = await serverApi.updateAutoContinue(props.workspaceId, props.sessionId, updates as any)
       setConfig((prev) => ({ ...prev, ...result, triggerCount: prev.triggerCount }))
       setDialogOpen(false)
     } catch (err) {
@@ -188,31 +202,95 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
                   <label class="auto-continue-field-label">
                     {t("autoContinue.maxTriggers")}
                   </label>
-                  <input
-                    type="number"
-                    value={draftMaxTriggers()}
-                    onInput={(e) => setDraftMaxTriggers(Number(e.currentTarget.value) || 1)}
-                    min={1}
-                    max={999}
-                    class="auto-continue-number-input"
-                  />
+                  <select
+                    class="auto-continue-select"
+                    value={MAX_TRIGGER_PRESETS.includes(draftMaxTriggers() as never) ? String(draftMaxTriggers()) : "custom"}
+                    onChange={(e) => {
+                      const val = e.currentTarget.value
+                      if (val !== "custom") setDraftMaxTriggers(Number(val))
+                    }}
+                  >
+                    <For each={MAX_TRIGGER_PRESETS}>
+                      {(opt) => <option value={String(opt)}>{String(opt)}</option>}
+                    </For>
+                    <option value="custom">{t("autoContinue.customOption")}</option>
+                  </select>
+                  <Show when={!MAX_TRIGGER_PRESETS.includes(draftMaxTriggers() as never)}>
+                    <div class="auto-continue-custom-row">
+                      <input
+                        type="number"
+                        value={draftMaxTriggers()}
+                        onInput={(e) => setDraftMaxTriggers(Number(e.currentTarget.value) || 1)}
+                        min={1}
+                        max={999}
+                        class="auto-continue-number-input"
+                      />
+                    </div>
+                  </Show>
                 </div>
 
                 <div class="auto-continue-field">
                   <label class="auto-continue-field-label">
                     {t("autoContinue.cooldown")}
                   </label>
-                  <div class="auto-continue-field-row">
-                    <input
-                      type="number"
-                      value={draftCooldownSec()}
-                      onInput={(e) => setDraftCooldownSec(Number(e.currentTarget.value) || 10)}
-                      min={5}
-                      max={3600}
-                      class="auto-continue-number-input"
-                    />
-                    <span class="auto-continue-unit">{t("autoContinue.seconds")}</span>
-                  </div>
+                  <select
+                    class="auto-continue-select"
+                    value={COOLDOWN_PRESETS.includes(draftCooldownSec() as never) ? String(draftCooldownSec()) : "custom"}
+                    onChange={(e) => {
+                      const val = e.currentTarget.value
+                      if (val !== "custom") setDraftCooldownSec(Number(val))
+                    }}
+                  >
+                    <For each={COOLDOWN_PRESETS}>
+                      {(opt) => <option value={String(opt)}>{opt}s</option>}
+                    </For>
+                    <option value="custom">{t("autoContinue.customOption")}</option>
+                  </select>
+                  <Show when={!COOLDOWN_PRESETS.includes(draftCooldownSec() as never)}>
+                    <div class="auto-continue-custom-row">
+                      <input
+                        type="number"
+                        value={draftCooldownSec()}
+                        onInput={(e) => setDraftCooldownSec(Number(e.currentTarget.value) || 10)}
+                        min={5}
+                        max={3600}
+                        class="auto-continue-number-input"
+                      />
+                      <span class="auto-continue-unit">{t("autoContinue.seconds")}</span>
+                    </div>
+                  </Show>
+                </div>
+
+                <div class="auto-continue-field">
+                  <label class="auto-continue-field-label">
+                    {t("autoContinue.confirmSeconds")}
+                  </label>
+                  <select
+                    class="auto-continue-select"
+                    value={CONFIRM_PRESETS.includes(draftConfirmSec() as never) ? String(draftConfirmSec()) : "custom"}
+                    onChange={(e) => {
+                      const val = e.currentTarget.value
+                      if (val !== "custom") setDraftConfirmSec(Number(val))
+                    }}
+                  >
+                    <For each={CONFIRM_PRESETS}>
+                      {(opt) => <option value={String(opt)}>{opt}s</option>}
+                    </For>
+                    <option value="custom">{t("autoContinue.customOption")}</option>
+                  </select>
+                  <Show when={!CONFIRM_PRESETS.includes(draftConfirmSec() as never)}>
+                    <div class="auto-continue-custom-row">
+                      <input
+                        type="number"
+                        value={draftConfirmSec()}
+                        onInput={(e) => setDraftConfirmSec(Number(e.currentTarget.value) || 1)}
+                        min={1}
+                        max={60}
+                        class="auto-continue-number-input"
+                      />
+                      <span class="auto-continue-unit">{t("autoContinue.seconds")}</span>
+                    </div>
+                  </Show>
                 </div>
 
                 <div class="auto-continue-field">
@@ -225,6 +303,19 @@ const AutoContinueControls: Component<AutoContinueControlsProps> = (props) => {
                     placeholder={t("autoContinue.promptPlaceholder")}
                     rows={3}
                     class="auto-continue-textarea"
+                  />
+                </div>
+
+                <div class="auto-continue-field">
+                  <label class="auto-continue-field-label">
+                    {t("autoContinue.checklistPath")}
+                  </label>
+                  <input
+                    type="text"
+                    value={draftChecklistPath()}
+                    onInput={(e) => setDraftChecklistPath(e.currentTarget.value)}
+                    placeholder={t("autoContinue.checklistPathPlaceholder")}
+                    class="auto-continue-checklist-path"
                   />
                 </div>
 
