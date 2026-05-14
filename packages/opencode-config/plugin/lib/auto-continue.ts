@@ -1,4 +1,5 @@
 import fs from "fs"
+import path from "path"
 import { tool } from "@opencode-ai/plugin/tool"
 import type { CodeNomadConfig } from "./request"
 import { createCodeNomadRequester } from "./request"
@@ -22,6 +23,52 @@ interface AutoContinueResponse {
   lastTriggerAt: number
   countdownRemaining: number
   checklistPath?: string
+}
+
+function getWorkspaceRoot(): string {
+  return process.env.CODENOMAD_ROOT_DIR || process.cwd()
+}
+
+/** 
+ * Resolve the checklist file with fallback locations:
+ * 1. Primary path from server config (may be absolute or relative)
+ * 2. {root}/.codenomad/{sessionId}-auto-continue-checklist.md
+ * 3. {root}/.codenomad/auto-continue-checklist.md
+ * 4. {root}/auto-continue-checklist.md
+ * Returns the first file that exists, or the resolved primary path if none exist.
+ */
+function resolveChecklistFile(primaryPath: string | null | undefined, sessionId: string): string {
+  const root = getWorkspaceRoot()
+
+  // Build candidate paths in priority order
+  const candidates: string[] = []
+
+  // 1. Primary path from server config (if provided)
+  if (primaryPath) {
+    if (path.isAbsolute(primaryPath)) {
+      candidates.push(primaryPath)
+    } else {
+      candidates.push(path.resolve(root, primaryPath))
+    }
+  }
+
+  // 2. Session-specific path in .codenomad/
+  candidates.push(path.resolve(root, ".codenomad", `${sessionId}-auto-continue-checklist.md`))
+
+  // 3. Generic path in .codenomad/
+  candidates.push(path.resolve(root, ".codenomad", "auto-continue-checklist.md"))
+
+  // 4. Generic path in project root
+  candidates.push(path.resolve(root, "auto-continue-checklist.md"))
+
+  // Return first existing file, or the primary candidate
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate
+    }
+  }
+
+  return candidates[0] // fallback to primary
 }
 
 function verifyChecklistFile(filePath: string): ChecklistResult {
