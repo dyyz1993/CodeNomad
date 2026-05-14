@@ -66,6 +66,7 @@ interface CliOptions {
   dangerouslySkipAuth: boolean
   subdomainBase?: string
   subdomainExternalPort?: number
+  shanboxApiUrl?: string
 }
 
 const DEFAULT_HOST = "127.0.0.1"
@@ -135,6 +136,10 @@ function parseCliOptions(argv: string[]): CliOptions {
       new Option("--subdomain-external-port <port>", "External HTTPS port for subdomain proxy URLs (e.g. 8443)")
         .env("CODENOMAD_SUBDOMAIN_EXTERNAL_PORT"),
     )
+    .addOption(
+      new Option("--shanbox-api-url <url>", "Shanbox API URL (e.g. http://192.168.0.29:9080)")
+        .env("CODENOMAD_SHANBOX_API_URL"),
+    )
 
   program.parse(argv, { from: "user" })
   const parsed = program.opts<{
@@ -164,6 +169,7 @@ function parseCliOptions(argv: string[]): CliOptions {
     authCookieName: string
     generateToken?: boolean
     dangerouslySkipAuth?: boolean
+    shanboxApiUrl?: string
   }>()
 
   const parseBooleanEnv = (value: string | undefined): boolean => {
@@ -213,6 +219,7 @@ function parseCliOptions(argv: string[]): CliOptions {
     dangerouslySkipAuth: Boolean(parsed.dangerouslySkipAuth),
     subdomainBase: (parsed as any).subdomainBase as string | undefined,
     subdomainExternalPort: (parsed as any).subdomainExternalPort ? Number((parsed as any).subdomainExternalPort) : undefined,
+    shanboxApiUrl: (parsed as any).shanboxApiUrl as string | undefined,
   }
 }
 
@@ -342,12 +349,13 @@ async function main() {
   await autoContinueManager.ready()
   workspaceManager.autoContinueManager = autoContinueManager
 
-  const subdomainProxyManager = options.subdomainBase
+  const subdomainProxyManager = options.subdomainBase || options.shanboxApiUrl
     ? new SubdomainProxyManager({
         settings,
-        baseDomain: options.subdomainBase,
+        baseDomain: options.subdomainBase ?? "shanbox.19930810.xyz",
         externalPort: options.subdomainExternalPort,
         logger: logger.child({ component: "subdomain-proxy" }),
+        shanboxApiUrl: options.shanboxApiUrl,
       })
     : undefined
   const instanceEventBridge = new InstanceEventBridge({

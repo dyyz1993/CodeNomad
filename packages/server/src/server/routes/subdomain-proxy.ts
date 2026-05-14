@@ -7,7 +7,7 @@ interface RouteDeps {
 }
 
 const SubdomainCreateSchema = z.object({
-  subdomain: z.string().trim().min(1).max(63),
+  subdomain: z.string().trim().min(1).max(63).optional(),
   targetPort: z.number().int().min(1).max(65535),
   targetHost: z.string().trim().optional(),
   name: z.string().trim().optional(),
@@ -31,7 +31,7 @@ export function registerSubdomainProxyRoutes(app: FastifyInstance, deps: RouteDe
   app.post("/api/subdomain-proxies", async (request, reply) => {
     try {
       const body = SubdomainCreateSchema.parse(request.body ?? {})
-      const mapping = deps.subdomainProxyManager.create(body)
+      const mapping = await deps.subdomainProxyManager.create(body)
       reply.code(201)
       return { ...mapping, fullUrl: deps.subdomainProxyManager.getFullUrl(mapping.subdomain) }
     } catch (error) {
@@ -52,7 +52,7 @@ export function registerSubdomainProxyRoutes(app: FastifyInstance, deps: RouteDe
   })
 
   app.delete<{ Params: { subdomain: string } }>("/api/subdomain-proxies/:subdomain", async (request, reply) => {
-    const removed = deps.subdomainProxyManager.delete(request.params.subdomain)
+    const removed = await deps.subdomainProxyManager.delete(request.params.subdomain)
     if (!removed) {
       reply.code(404)
       return { error: "Mapping not found" }
