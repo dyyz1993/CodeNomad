@@ -61,7 +61,7 @@ describe("AutoContinueManager", () => {
   })
 
   async function createManager(port = 3210) {
-    const mgr = new AutoContinueManager(createMockLogger(), createMockWorkspaceManager(port), tmpDir)
+    const mgr = new AutoContinueManager(createMockLogger(), createMockWorkspaceManager(port), tmpDir, 0)
     await mgr.ready()
     return mgr
   }
@@ -144,6 +144,8 @@ describe("AutoContinueManager", () => {
     mgr.setConfig("ws1", "s1", { enabled: true, confirmSeconds: 1 })
     mgr.onSessionIdle("ws1", "s1", true)
 
+    await new Promise((r) => setTimeout(r, 100))
+
     const state = mgr.getState("ws1", "s1")
     assert.ok(state)
     assert.equal(state.countdownRemaining, 1)
@@ -165,6 +167,8 @@ describe("AutoContinueManager", () => {
     const mgr = await createManager()
     mgr.setConfig("ws1", "s1", { enabled: true, confirmSeconds: 60 })
     mgr.onSessionIdle("ws1", "s1", true)
+
+    await new Promise((r) => setTimeout(r, 200))
 
     let state = mgr.getState("ws1", "s1")
     assert.ok(state)
@@ -227,13 +231,13 @@ describe("AutoContinueManager", () => {
   it("persists state to disk and reloads", async () => {
     const logger = createMockLogger()
     const wm = createMockWorkspaceManager()
-    const mgr1 = new AutoContinueManager(logger, wm, tmpDir)
+    const mgr1 = new AutoContinueManager(logger, wm, tmpDir, 0)
     await mgr1.ready()
 
     mgr1.setConfig("ws1", "s1", { enabled: true, prompt: "test-prompt", confirmSeconds: 3 })
     await new Promise((r) => setTimeout(r, 100))
 
-    const mgr2 = new AutoContinueManager(logger, wm, tmpDir)
+    const mgr2 = new AutoContinueManager(logger, wm, tmpDir, 0)
     await mgr2.ready()
 
     const config = mgr2.getConfig("ws1", "s1")

@@ -20,9 +20,12 @@ interface SessionAutoContinueState {
   triggerCount: number
   lastTriggerAt: number
   confirmTimer: ReturnType<typeof setTimeout> | null
+  settleTimer: ReturnType<typeof setTimeout> | null
   idleCheckCount: number
   countdownRemaining: number
 }
+
+const SETTLE_WINDOW_MS = 5_000
 
 const DEFAULT_CONFIG: AutoContinueConfig = {
   enabled: false,
@@ -39,17 +42,20 @@ export class AutoContinueManager {
   private readonly logger: Logger
   private readonly stateFilePath: string
   private loadStatePromise: Promise<void> | null = null
+  private readonly settleWindowMs: number
 
   constructor(
     logger: Logger,
     private readonly workspaceManager: WorkspaceManager,
     configDir?: string,
+    settleWindowMs?: number,
   ) {
     this.logger = logger.child({ component: "auto-continue" })
     this.stateFilePath = path.join(
       configDir ?? path.join(os.homedir(), ".config", "codenomad"),
       "auto-continue-state.json",
     )
+    this.settleWindowMs = settleWindowMs ?? SETTLE_WINDOW_MS
     this.loadStatePromise = this.loadState()
   }
 
@@ -85,6 +91,7 @@ export class AutoContinueManager {
         triggerCount: 0,
         lastTriggerAt: 0,
         confirmTimer: null,
+        settleTimer: null,
         idleCheckCount: 0,
         countdownRemaining: 0,
       }
@@ -99,6 +106,10 @@ export class AutoContinueManager {
       state.confirmTimer = null
       state.idleCheckCount = 0
       state.countdownRemaining = 0
+    }
+    if (!state.config.enabled && state.settleTimer) {
+      clearTimeout(state.settleTimer)
+      state.settleTimer = null
     }
 
     void this.saveState()
@@ -143,6 +154,7 @@ export class AutoContinueManager {
           triggerCount: entry.triggerCount,
           lastTriggerAt: entry.lastTriggerAt,
           confirmTimer: null,
+          settleTimer: null,
           idleCheckCount: 0,
           countdownRemaining: 0,
         })
@@ -192,14 +204,22 @@ export class AutoContinueManager {
 
     if (!state || !state.config.enabled) return
 
-    state.idleCheckCount = 0
-
     if (state.confirmTimer) {
       clearTimeout(state.confirmTimer)
+      state.confirmTimer = null
+    }
+    if (state.settleTimer) {
+      clearTimeout(state.settleTimer)
+      state.settleTimer = null
     }
 
-    this.logger.info({ workspaceId, sessionId }, "AutoContinue starting confirmation timer")
-    this.startIdleConfirmation(workspaceId, sessionId, state)
+    this.logger.info({ workspaceId, sessionId, settleMs: this.settleWindowMs }, "AutoContinue starting settle window")
+    state.settleTimer = setTimeout(() => {
+      state.settleTimer = null
+      state.idleCheckCount = 0
+      this.logger.info({ workspaceId, sessionId }, "AutoContinue settle window passed, starting confirmation timer")
+      this.startIdleConfirmation(workspaceId, sessionId, state)
+    }, this.settleWindowMs)
   }
 
   onSessionBusy(workspaceId: string, sessionId: string): void {
@@ -207,6 +227,10 @@ export class AutoContinueManager {
     const state = this.sessions.get(k)
     if (!state) return
 
+    if (state.settleTimer) {
+      clearTimeout(state.settleTimer)
+      state.settleTimer = null
+    }
     if (state.confirmTimer) {
       clearTimeout(state.confirmTimer)
       state.confirmTimer = null
@@ -334,6 +358,10 @@ export class AutoContinueManager {
     const state = this.sessions.get(k)
     if (!state) return false
 
+    if (state.settleTimer) {
+      clearTimeout(state.settleTimer)
+      state.settleTimer = null
+    }
     if (state.confirmTimer) {
       clearTimeout(state.confirmTimer)
       state.confirmTimer = null
@@ -346,6 +374,7 @@ export class AutoContinueManager {
   removeSession(workspaceId: string, sessionId: string): void {
     const k = this.key(workspaceId, sessionId)
     const state = this.sessions.get(k)
+    if (state?.settleTimer) clearTimeout(state.settleTimer)
     if (state?.confirmTimer) clearTimeout(state.confirmTimer)
     this.sessions.delete(k)
   }
@@ -353,6 +382,7 @@ export class AutoContinueManager {
   removeWorkspaceSessions(workspaceId: string): void {
     for (const [key, state] of this.sessions.entries()) {
       if (key.startsWith(`${workspaceId}:`)) {
+        if (state.settleTimer) clearTimeout(state.settleTimer)
         if (state.confirmTimer) clearTimeout(state.confirmTimer)
         this.sessions.delete(key)
       }
@@ -361,6 +391,7 @@ export class AutoContinueManager {
 
   dispose(): void {
     for (const state of this.sessions.values()) {
+      if (state.settleTimer) clearTimeout(state.settleTimer)
       if (state.confirmTimer) clearTimeout(state.confirmTimer)
     }
     this.sessions.clear()
