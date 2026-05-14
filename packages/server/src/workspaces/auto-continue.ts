@@ -70,8 +70,8 @@ export class AutoContinueManager {
 
   getChecklistPath(workspaceId: string, sessionId: string, workspaceRoot: string): string {
     const config = this.sessions.get(this.key(workspaceId, sessionId))?.config ?? DEFAULT_CONFIG
-    const relativePath = config.checklistRelativePath ?? DEFAULT_CONFIG.checklistRelativePath
     // Supports {sessionId} template variable
+    const relativePath = config.checklistRelativePath ?? DEFAULT_CONFIG.checklistRelativePath ?? ".codenomad/{sessionId}-auto-continue-checklist.md"
     const resolved = relativePath.replace(/\{sessionId\}/g, sessionId)
     return path.resolve(workspaceRoot, resolved)
   }
