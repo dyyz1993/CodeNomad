@@ -1,6 +1,8 @@
 import type { SessionInfo } from "./session-state"
 
 import { sseManager } from "../lib/sse-manager"
+import { serverEvents } from "../lib/server-events"
+import { instances } from "./instances"
 
 import {
   activeParentSessionId,
@@ -73,6 +75,10 @@ import {
   handleTuiToast,
 } from "./session-events"
 
+import { getLogger } from "../lib/logger"
+
+const log = getLogger("session")
+
 sseManager.onMessageUpdate = handleMessageUpdate
 sseManager.onMessagePartUpdated = handleMessageUpdate
 sseManager.onMessagePartDelta = handleMessagePartDelta
@@ -89,6 +95,18 @@ sseManager.onPermissionUpdated = handlePermissionUpdated
 sseManager.onPermissionReplied = handlePermissionReplied
 sseManager.onQuestionAsked = handleQuestionAsked
 sseManager.onQuestionAnswered = handleQuestionAnswered
+
+serverEvents.onOpen(() => {
+  const known = sessions()
+  if (known.size === 0) return
+  for (const [instanceId] of known) {
+    const inst = instances().get(instanceId)
+    if (!inst?.client) continue
+    fetchSessions(instanceId).catch((err) => {
+      log.warn("Reconnect status refresh failed", { instanceId, err })
+    })
+  }
+})
 
 export {
   abortSession,

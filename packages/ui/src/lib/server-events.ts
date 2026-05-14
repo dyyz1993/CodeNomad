@@ -5,6 +5,8 @@ import { getLogger } from "./logger"
 
 const RETRY_BASE_DELAY = 1000
 const RETRY_MAX_DELAY = 10000
+const STALE_THRESHOLD_MS = 30_000
+const HEALTH_CHECK_INTERVAL_MS = 15_000
 const log = getLogger("sse")
 
 function logSse(message: string, context?: Record<string, unknown>) {
@@ -22,6 +24,8 @@ class ServerEvents {
   private retryDelay = RETRY_BASE_DELAY
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private reconnecting = false
+  private lastEventTime = 0
+  private healthCheckTimer: ReturnType<typeof setInterval> | null = null
 
   constructor() {
     this.connect()
@@ -55,6 +59,8 @@ class ServerEvents {
       logSse("Events stream connected")
       this.retryDelay = RETRY_BASE_DELAY
       this.reconnecting = false
+      this.lastEventTime = Date.now()
+      this.startHealthCheck()
       this.openHandlers.forEach((handler) => handler())
     }
   }
@@ -62,6 +68,7 @@ class ServerEvents {
   private scheduleReconnect() {
     if (this.reconnecting) return
     this.reconnecting = true
+    this.stopHealthCheck()
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
     }
@@ -79,6 +86,7 @@ class ServerEvents {
 
   private dispatch(event: WorkspaceEventPayload) {
     logSse(`event ${event.type}`)
+    this.lastEventTime = Date.now()
     this.handlers.get("*")?.forEach((handler) => handler(event))
     this.handlers.get(event.type)?.forEach((handler) => handler(event))
   }
@@ -95,6 +103,23 @@ class ServerEvents {
   onOpen(handler: () => void): () => void {
     this.openHandlers.add(handler)
     return () => this.openHandlers.delete(handler)
+  }
+
+  private startHealthCheck() {
+    this.stopHealthCheck()
+    this.healthCheckTimer = setInterval(() => {
+      if (this.lastEventTime > 0 && Date.now() - this.lastEventTime > STALE_THRESHOLD_MS) {
+        logSse("No events received for 30s, forcing reconnect")
+        this.scheduleReconnect()
+      }
+    }, HEALTH_CHECK_INTERVAL_MS)
+  }
+
+  private stopHealthCheck() {
+    if (this.healthCheckTimer !== null) {
+      clearInterval(this.healthCheckTimer)
+      this.healthCheckTimer = null
+    }
   }
 }
 
