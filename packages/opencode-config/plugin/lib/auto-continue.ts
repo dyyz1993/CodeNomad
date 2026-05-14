@@ -15,9 +15,12 @@ export function createAutoContinueTools(config: CodeNomadConfig) {
     auto_continue_cancel: tool({
       description: [
         "Cancel the auto-continue countdown timer for the current session.",
-        "Use this when the task is complete and no further auto-continue is needed.",
-        "This stops the countdown and prevents the system from automatically sending another prompt.",
-      ].join(" "),
+        "",
+        "IMPORTANT: Do NOT call this tool automatically after completing a task.",
+        "This tool should ONLY be called when the USER explicitly asks to stop auto-continue.",
+        "Never call this on your own initiative — the auto-continue system is designed to keep",
+        "the session alive so you can continue working. Let it run unless the user says otherwise.",
+      ].join("\n"),
       args: {},
       async execute(_args, ctx) {
         const sessionId = ctx.sessionID
@@ -37,9 +40,11 @@ export function createAutoContinueTools(config: CodeNomadConfig) {
     auto_continue_pause: tool({
       description: [
         "Pause auto-continue for the current session. The countdown will stop and auto-continue will not trigger.",
-        "Use this when the task is paused or waiting for user input and you don't want auto-continue to fire.",
-        "The user can re-enable it later if needed.",
-      ].join(" "),
+        "",
+        "IMPORTANT: Do NOT call this tool automatically.",
+        "Only call this when the USER explicitly asks to pause, or when you need to ask the user",
+        "a question and want to prevent auto-continue from firing while waiting for their response.",
+      ].join("\n"),
       args: {},
       async execute(_args, ctx) {
         const sessionId = ctx.sessionID
