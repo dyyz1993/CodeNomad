@@ -8,6 +8,7 @@ import { I18nProvider, preloadLocaleMessages } from "./lib/i18n"
 import { storage } from "./lib/storage"
 import "./index.css"
 import "@git-diff-view/solid/styles/diff-view-pure.css"
+import "./lib/perf-monitor"
 
 const root = document.getElementById("root")
 
